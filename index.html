@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cartera | Gestión de pagos</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+    <aside>
+        <div class="brand"><span class="brand-mark">$</span> cartera</div>
+        <div class="nav-label">Workspace</div>
+        <nav><button class="active"><span class="nav-icon">▦</span>Resumen</button><button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button><button id="exportNav"><span class="nav-icon">↥</span>Exportar datos</button><button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button></nav>
+        <div class="side-bottom">Tus datos se guardan localmente en este dispositivo.<br><strong>Última actualización: ahora</strong></div>
+    </aside>
+    <main>
+        <header class="topbar"><div><div class="eyebrow" id="todayLabel">Resumen financiero</div><h1>Hola, aquí está tu mes.</h1><div class="eyebrow">Controla tus pagos sin perder el ritmo.</div></div><div class="actions"><button class="btn btn-light" id="exportBtn">↥ <span>Exportar</span></button><button class="btn btn-dark" id="addBtn">＋ <span>Nuevo pago</span></button></div></header>
+        <section class="overview"><article class="stat primary"><div class="stat-label">Gasto total del mes</div><div class="amount" id="monthTotal">$ 0 <small>MXN</small></div><span class="delta" id="monthDelta">0 pagos</span></article><article class="stat"><div class="stat-label">Promedio diario</div><div class="amount" id="dailyAverage">$ 0</div></article><article class="stat"><div class="stat-label">Categoría principal</div><div class="amount" id="topCategory">—</div></article></section>
+        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="categories" id="categories"></div></section></div>
+        <section class="panel" style="margin-top:16px"><div class="panel-head"><h2>Pagos recientes</h2><button class="eyebrow" id="clearBtn" style="background:none;color:var(--muted);cursor:pointer">Limpiar todo</button></div><div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th><th></th></tr></thead><tbody id="payments"></tbody></table><div class="empty hidden" id="emptyState">Todavía no hay pagos. Añade el primero para empezar.</div></div></section>
+    </main>
+</div>fsdfsfds
+<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="number" min="0.01" step="0.01" placeholder="0.00"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
+<div class="modal-backdrop" id="categoryModal"><form class="modal" id="categoryForm"><h2>Gestionar categorías</h2><div class="category-list" id="categoryList"></div><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Salud"></label><label>Color<select name="color"><option value="#ff856c">Coral</option><option value="#88c9ed">Azul</option><option value="#c7f36b">Lima</option><option value="#d5a6e8">Lila</option><option value="#f5ca72">Amarillo</option></select></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button class="btn btn-dark">Crear categoría</button></div></form></div>
+<script src="script.js"></script>
+</body>
+</html>
