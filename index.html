@@ -20,8 +20,10 @@
             <button class="btn btn-dark auth-submit" id="authSubmit">Iniciar sesión</button>
             <p class="auth-error" id="authError" role="alert"></p>
         </form>
+        <div class="auth-divider"><span>o continúa con</span></div>
+        <button class="btn btn-light google-submit" id="googleBtn" type="button"><span class="google-mark">G</span> Google</button>
         <button class="auth-switch" id="authSwitch" type="button">¿Primera vez? Crear una cuenta</button>
-        <p class="auth-note">Esta versión guarda la cuenta y los datos solo en este dispositivo.</p>
+        <p class="auth-note">Tus registros se guardan de forma segura en Firebase.</p>
     </div>
 </section>
 <div class="app">
@@ -40,6 +42,10 @@
 </div>
 <div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="number" min="0.01" step="0.01" placeholder="0.00"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
 <div class="modal-backdrop" id="categoryModal"><form class="modal" id="categoryForm"><h2>Gestionar categorías</h2><div class="category-list" id="categoryList"></div><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Salud"></label><label>Color<select name="color"><option value="#ff856c">Coral</option><option value="#88c9ed">Azul</option><option value="#c7f36b">Lima</option><option value="#d5a6e8">Lila</option><option value="#f5ca72">Amarillo</option></select></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button class="btn btn-dark">Crear categoría</button></div></form></div>
-<script src="script.js"></script>
+<script src="firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="script.js?v=10"></script>
 </body>
 </html>

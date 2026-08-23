@@ -21,7 +21,30 @@ Todos los importes se muestran en pesos colombianos (COP).
 
 En el primer acceso selecciona `Crear una cuenta` y registra un correo y una contraseña. Después podrás iniciar sesión y cerrar sesión desde el panel.
 
-La cuenta y la sesión se guardan únicamente en el `localStorage` del navegador. Esta autenticación sirve para uso local en un dispositivo, pero no sustituye un sistema de usuarios con backend para una aplicación publicada.
+- Firebase Authentication y Cloud Firestore
+La autenticación y los registros se gestionan con Firebase. Firebase mantiene la sesión en el navegador, mientras que los pagos y las categorías se guardan en Cloud Firestore separados por usuario.
+
+## Configurar Firebase
+
+1. Crea un proyecto en [Firebase Console](https://console.firebase.google.com/).
+2. Registra una aplicación web y copia su configuración en `firebase-config.js`.
+3. En **Authentication > Sign-in method**, habilita `Correo electrónico/contraseña` y `Google`.
+4. En **Firestore Database**, crea la base de datos y publica el contenido de `firestore.rules`:
+
+```text
+rules_version = '2';
+service cloud.firestore {
+	match /databases/{database}/documents {
+		match /users/{userId}/{document=**} {
+			allow read, write: if request.auth != null && request.auth.uid == userId;
+		}
+	}
+}
+```
+
+5. Sirve la aplicación desde un origen permitido, por ejemplo `python -m http.server 8000`, y agrega `localhost` en **Authentication > Settings > Authorized domains** si Firebase lo solicita.
+
+No publiques una configuración con reglas abiertas. `firebase-config.js` contiene identificadores del proyecto, no contraseñas, pero las reglas de Firestore son las que protegen los datos.
 
 ## Tecnologías
 
