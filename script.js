@@ -68,8 +68,16 @@ $('googleBtn').onclick = async () => {
     if (!auth) { $('authError').textContent = 'Firebase no se pudo iniciar. Recarga la página.'; return; }
     const provider = new firebase.auth.GoogleAuthProvider();
     $('googleBtn').disabled = true; $('googleBtn').textContent = 'Conectando con Google...'; $('authError').textContent = '';
-    try { await auth.signInWithRedirect(provider); }
-    catch (error) { $('googleBtn').disabled = false; $('googleBtn').innerHTML = '<span class="google-mark">G</span> Google'; firebaseError(error); }
+    try {
+        const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+        if (isLocal) await auth.signInWithRedirect(provider);
+        else await auth.signInWithPopup(provider);
+    } catch (error) {
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-cancelled-by-user') {
+            try { await auth.signInWithRedirect(provider); return; } catch (redirectError) { error = redirectError; }
+        }
+        $('googleBtn').disabled = false; $('googleBtn').innerHTML = '<span class="google-mark">G</span> Google'; firebaseError(error);
+    }
 };
 $('logoutBtn').onclick = async () => {
     if (!auth) return;
