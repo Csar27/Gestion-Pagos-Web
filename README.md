@@ -1,6 +1,6 @@
 # Cartera | Gestión de pagos
 
-Aplicación web estática para registrar y consultar pagos personales de forma sencilla. Los datos se almacenan localmente en el navegador, sin necesidad de una base de datos o un backend.
+Aplicación web estática para registrar y consultar pagos personales en pesos colombianos de forma sencilla. Los datos se almacenan localmente en el navegador, sin necesidad de una base de datos o un backend.
 
 ## Funcionalidades
 
@@ -13,6 +13,15 @@ Aplicación web estática para registrar y consultar pagos personales de forma s
 - Eliminar pagos individuales o todos los pagos.
 - Cambiar entre tema claro y oscuro.
 - Exportar los pagos a un archivo CSV compatible con hojas de cálculo.
+- Iniciar sesión, mantener la sesión activa y cerrar sesión.
+
+Todos los importes se muestran en pesos colombianos (COP).
+
+## Inicio de sesión
+
+En el primer acceso selecciona `Crear una cuenta` y registra un correo y una contraseña. Después podrás iniciar sesión y cerrar sesión desde el panel.
+
+La cuenta y la sesión se guardan únicamente en el `localStorage` del navegador. Esta autenticación sirve para uso local en un dispositivo, pero no sustituye un sistema de usuarios con backend para una aplicación publicada.
 
 ## Tecnologías
 
