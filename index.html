@@ -4,48 +4,105 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=20260830-layout-3">
 </head>
 <body>
 <section class="auth-screen" id="authScreen">
     <div class="auth-card">
         <div class="brand auth-brand"><span class="brand-mark">$</span> cartera</div>
         <div class="eyebrow">Gestión personal</div>
-        <h1 id="authTitle">Inicia sesión</h1>
-        <p class="auth-copy" id="authCopy">Accede a tu espacio para continuar.</p>
-        <form id="authForm" class="form-grid">
-            <label>Correo electrónico<input name="email" type="email" required autocomplete="email" placeholder="tu@correo.com"></label>
-            <label>Contraseña<input name="password" type="password" required minlength="6" autocomplete="current-password" placeholder="Mínimo 6 caracteres"></label>
-            <label class="confirm-password hidden" id="confirmPasswordLabel">Confirmar contraseña<input name="confirmPassword" type="password" minlength="6" autocomplete="new-password" placeholder="Repite tu contraseña"></label>
-            <button class="btn btn-dark auth-submit" id="authSubmit">Iniciar sesión</button>
-            <p class="auth-error" id="authError" role="alert"></p>
-        </form>
-        <div class="auth-divider"><span>o continúa con</span></div>
-        <button class="btn btn-light google-submit" id="googleBtn" type="button"><span class="google-mark">G</span> Google</button>
-        <button class="auth-switch" id="authSwitch" type="button">¿Primera vez? Crear una cuenta</button>
-        <p class="auth-note">Tus registros se guardan de forma segura en Firebase.</p>
+        <h1>Inicia sesión</h1>
+        <p class="auth-copy">Continúa con Google para administrar tus pagos y categorías.</p>
+        <button class="btn btn-light google-submit" id="googleBtn" type="button"><span class="google-mark">G</span> Continuar con Google</button>
+        <p class="auth-error" id="authError" role="alert"></p>
+        <p class="auth-note">Solo se admite acceso con Google para mantener tu cuenta segura.</p>
     </div>
 </section>
 <div class="app">
     <aside>
         <div class="brand"><span class="brand-mark">$</span> cartera</div>
         <div class="nav-label">Workspace</div>
-        <nav><button class="active"><span class="nav-icon">▦</span>Resumen</button><button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button><button id="exportNav"><span class="nav-icon">↥</span>Exportar datos</button><button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button></nav>
+        <nav>
+            <button class="active" id="summaryNav" onclick="window.setActiveNav && window.setActiveNav('summaryNav'); window.toggleSimulatorView && window.toggleSimulatorView(false);"><span class="nav-icon">▦</span>Resumen</button>
+            <button id="simulatorNav" onclick="window.setActiveNav && window.setActiveNav('simulatorNav'); window.toggleSimulatorView && window.toggleSimulatorView(true);"><span class="nav-icon">◫</span>Simulador</button>
+            <button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button>
+            <button id="exportNav"><span class="nav-icon">↥</span>Exportar datos</button>
+            <button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button>
+        </nav>
+        <div class="palette-block">
+            <div class="nav-label">Paleta</div>
+            <div class="palette-picker" id="palettePicker">
+                <button class="palette-swatch is-active" data-palette="forest" title="Verde" aria-label="Paleta verde"><span style="--swatch-one:#c7f36b;--swatch-two:#88c9ed;--swatch-three:#ff856c"></span></button>
+                <button class="palette-swatch" data-palette="ocean" title="Azul" aria-label="Paleta azul"><span style="--swatch-one:#7ed9ff;--swatch-two:#60a5fa;--swatch-three:#a7f3d0"></span></button>
+                <button class="palette-swatch" data-palette="violet" title="Morado" aria-label="Paleta morada"><span style="--swatch-one:#d8b4fe;--swatch-two:#c084fc;--swatch-three:#f9a8d4"></span></button>
+                <button class="palette-swatch" data-palette="sunset" title="Naranja" aria-label="Paleta naranja"><span style="--swatch-one:#fbbf24;--swatch-two:#fb7185;--swatch-three:#fdba74"></span></button>
+            </div>
+        </div>
         <div class="side-bottom">Sesión activa: <strong id="activeUser"></strong><br><button class="logout-btn" id="logoutBtn" type="button">Cerrar sesión</button></div>
     </aside>
     <main>
         <header class="topbar"><div><div class="eyebrow" id="todayLabel">Resumen financiero</div><h1>Hola, aquí está tu mes.</h1><div class="eyebrow">Controla tus pagos sin perder el ritmo.</div></div><div class="actions"><button class="btn btn-light" id="exportBtn">↥ <span>Exportar</span></button><button class="btn btn-dark" id="addBtn">＋ <span>Nuevo pago</span></button></div></header>
         <section class="overview"><article class="stat primary"><div class="stat-label">Gasto total del mes</div><div class="amount" id="monthTotal">$ 0 <small>COP</small></div><span class="delta" id="monthDelta">0 pagos</span></article><article class="stat"><div class="stat-label">Promedio diario</div><div class="amount" id="dailyAverage">$ 0</div></article><article class="stat"><div class="stat-label">Categoría principal</div><div class="amount" id="topCategory">—</div></article></section>
-        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="categories" id="categories"></div></section></div>
-        <section class="panel" style="margin-top:16px"><div class="panel-head"><h2>Pagos recientes</h2><button class="eyebrow" id="clearBtn" style="background:none;color:var(--muted);cursor:pointer">Limpiar todo</button></div><div class="table-wrap"><table><thead><tr><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th><th></th></tr></thead><tbody id="payments"></tbody></table><div class="empty hidden" id="emptyState">Todavía no hay pagos. Añade el primero para empezar.</div></div></section>
+        <section class="panel simulator-panel hidden" id="simulatorSection">
+            <div class="panel-head"><h2>Simulador de presupuesto semanal</h2></div>
+            <div class="simulator-grid">
+                <div class="simulator-form">
+                    <label>Ingreso mensual<input type="text" id="simulatorIncome" inputmode="numeric" data-currency-input placeholder="2.500.000"></label>
+                    <label>Gasto semanal actual<input type="text" id="simulatorWeekSpend" inputmode="numeric" data-currency-input placeholder="300.000"></label>
+                    <label>¿Cuánto quieres ahorrar?<input type="text" id="simulatorSavingsGoal" inputmode="numeric" data-currency-input placeholder="500.000"></label>
+                    <button type="button" class="btn btn-dark" id="simulateBtn">Calcular recomendación</button>
+                </div>
+                <div class="simulator-report" id="simulatorReport">
+                    <div class="report-line"><span>Cuánto puedes gastar</span><strong id="simulatorSpendLimit">$ 0</strong></div>
+                    <div class="report-line"><span>Gasto real de la semana</span><strong id="simulatorActualSpend">$ 0</strong></div>
+                    <div class="report-line"><span>Pagos en la semana</span><strong id="simulatorWeekCount">0</strong></div>
+                    <div class="report-line"><span>Meta de ahorro</span><strong id="simulatorTargetSave">$ 0</strong></div>
+                    <div class="report-line"><span>Recomendación</span><strong id="simulatorAdvice">—</strong></div>
+                    <p id="simulatorSummary">Ingresa tus ingresos y gastos para ver un plan realista.</p>
+                </div>
+            </div>
+        </section>
+        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="category-toggle-row"><button type="button" class="toggle-chart-btn" id="toggleCategoryChart" aria-pressed="false">Mostrar pastel</button></div><div class="category-chart-panel hidden" id="categoryChartPanel"><div class="donut-chart" id="categoryChart"><div class="donut-center"><strong id="categoryChartTotal">$ 0</strong></div><div class="chart-tooltip" id="chartTooltip">Sin datos</div></div></div><div class="categories" id="categories"></div></section></div>
+        <section class="panel" style="margin-top:16px">
+            <div class="panel-head"><h2>Pagos recientes</h2><button class="eyebrow" id="clearBtn" style="background:none;color:var(--muted);cursor:pointer">Limpiar todo</button></div>
+            <div class="filters-row">
+                <label>Desde<input type="date" id="filterDateFrom"></label>
+                <label>Hasta<input type="date" id="filterDateTo"></label>
+                <label>Categoría<select id="filterCategory"><option value="">Todas</option></select></label>
+                <div class="filter-actions">
+                    <div class="filter-total"><span>Total filtrado</span><strong id="selectedTotal">$ 0</strong></div>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th><th></th></tr></thead>
+                    <tbody id="payments"></tbody>
+                </table>
+                <div class="empty hidden" id="emptyState">Todavía no hay pagos. Añade el primero para empezar.</div>
+            </div>
+            <div class="pagination" aria-label="Paginación de pagos recientes">
+                <div class="page-size-inline">
+                    <span>Mostrar</span>
+                    <select id="pageSizeSelect" aria-label="Cantidad de registros por página">
+                        <option value="5">5</option>
+                        <option value="10">10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+                    </select>
+                </div>
+                <button class="btn btn-light" type="button" id="prevPage">Anterior</button>
+                <span id="pageInfo">Página 1 de 1</span>
+                <button class="btn btn-light" type="button" id="nextPage">Siguiente</button>
+            </div>
+        </section>
     </main>
 </div>
-<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="number" min="0.01" step="0.01" placeholder="0.00"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
-<div class="modal-backdrop" id="categoryModal"><form class="modal" id="categoryForm"><h2>Gestionar categorías</h2><div class="category-list" id="categoryList"></div><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Salud"></label><label>Color<select name="color"><option value="#ff856c">Coral</option><option value="#88c9ed">Azul</option><option value="#c7f36b">Lima</option><option value="#d5a6e8">Lila</option><option value="#f5ca72">Amarillo</option></select></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button class="btn btn-dark">Crear categoría</button></div></form></div>
-<script src="firebase-config.js"></script>
+<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
+<div class="modal-backdrop" id="categoryModal"><form class="modal" id="categoryForm"><h2>Gestionar categorías</h2><div class="category-list" id="categoryList"></div><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Salud"></label><label>Color<select name="color"><option value="#ff856c">Coral</option><option value="#88c9ed">Azul</option><option value="#c7f36b">Lima</option><option value="#d5a6e8">Lila</option><option value="#f5ca72">Amarillo</option><option value="#7dd3fc">Celeste</option><option value="#a7f3d0">Verde menta</option><option value="#f9a8d4">Rosa</option><option value="#fca5a5">Rojo suave</option><option value="#c4b5fd">Violeta suave</option></select></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button class="btn btn-dark">Crear categoría</button></div></form></div>
+<script src="config/firebase-config.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="script.js?v=11"></script>
+<script src="assets/js/script.js?v=20260830-5"></script>
 </body>
 </html>

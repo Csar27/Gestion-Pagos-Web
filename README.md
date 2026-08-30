@@ -90,8 +90,14 @@ Los pagos, las categorías y la preferencia de tema se guardan en el `localStora
 ```text
 .
 ├── Dockerfile
+├── README.md
 ├── index.html
-├── script.js
-├── style.css
-└── README.md
+├── assets/
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       └── script.js
+├── config/
+│   └── firebase-config.js
+└── firestore.rules
 ```
