@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Cartera">
+  <rect width="64" height="64" rx="16" fill="#20251F"/>
+  <path d="M32 13v38" fill="none" stroke="#C7F36B" stroke-width="5" stroke-linecap="round"/>
+  <path d="M42 25c0-4.4-4.5-7-10-7s-10 2.6-10 7 4.5 6 10 7 10 2.6 10 7-4.5 7-10 7-10-2.6-10-7"
+        fill="none" stroke="#C7F36B" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M47.5 16.5 56 8m0 0h-5.5M56 8v5.5" fill="none" stroke="#88C9ED" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

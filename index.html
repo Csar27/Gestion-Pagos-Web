@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="stylesheet" href="assets/css/style.css?v=20260830-layout-3">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20260927-rec4">
+    <link rel="stylesheet" href="assets/css/style.css?v=20260927-rec4">
 </head>
 <body>
 <section class="auth-screen" id="authScreen">
     <div class="auth-card">
-        <div class="brand auth-brand"><span class="brand-mark">$</span> cartera</div>
+        <div class="brand auth-brand"><span class="brand-mark"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><rect width="64" height="64" rx="16"/><path d="M32 13v38"/><path d="M42 25c0-4.4-4.5-7-10-7s-10 2.6-10 7 4.5 6 10 7 10 2.6 10 7-4.5 7-10 7-10-2.6-10-7"/><path class="accent" d="M47.5 16.5 56 8m0 0h-5.5M56 8v5.5"/></svg></span> cartera</div>
         <div class="eyebrow">Gestión personal</div>
         <h1>Inicia sesión</h1>
         <p class="auth-copy">Continúa con Google para administrar tus pagos y categorías.</p>
@@ -20,62 +21,41 @@
 </section>
 <div class="app">
     <aside>
-        <div class="brand"><span class="brand-mark">$</span> cartera</div>
+        <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><rect width="64" height="64" rx="16"/><path d="M32 13v38"/><path d="M42 25c0-4.4-4.5-7-10-7s-10 2.6-10 7 4.5 6 10 7 10 2.6 10 7-4.5 7-10 7-10-2.6-10-7"/><path class="accent" d="M47.5 16.5 56 8m0 0h-5.5M56 8v5.5"/></svg></span> cartera</div>
         <div class="nav-label">Workspace</div>
         <nav>
-            <button class="active" id="summaryNav" onclick="window.setActiveNav && window.setActiveNav('summaryNav'); window.toggleSimulatorView && window.toggleSimulatorView(false);"><span class="nav-icon">▦</span>Resumen</button>
-            <button id="simulatorNav" onclick="window.setActiveNav && window.setActiveNav('simulatorNav'); window.toggleSimulatorView && window.toggleSimulatorView(true);"><span class="nav-icon">◫</span>Simulador</button>
+            <button class="active" id="summaryNav"><span class="nav-icon">▦</span>Resumen</button>
+            <button id="simulatorNav"><span class="nav-icon">◫</span>Simulador</button>
+            <button id="savingsNav"><span class="nav-icon">$</span>Ahorro</button>
+            <button id="balanceNav"><span class="nav-icon">▤</span>Balance</button>
             <button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button>
             <button id="exportNav"><span class="nav-icon">↥</span>Exportar datos</button>
+            <button id="importNav"><span class="nav-icon">↧</span>Importar datos</button>
+            <input type="file" id="importFile" accept=".csv,text/csv" hidden>
             <button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button>
         </nav>
-        <div class="palette-block">
-            <div class="nav-label">Paleta</div>
-            <div class="palette-picker" id="palettePicker">
-                <button class="palette-swatch is-active" data-palette="forest" title="Verde" aria-label="Paleta verde"><span style="--swatch-one:#c7f36b;--swatch-two:#88c9ed;--swatch-three:#ff856c"></span></button>
-                <button class="palette-swatch" data-palette="ocean" title="Azul" aria-label="Paleta azul"><span style="--swatch-one:#7ed9ff;--swatch-two:#60a5fa;--swatch-three:#a7f3d0"></span></button>
-                <button class="palette-swatch" data-palette="violet" title="Morado" aria-label="Paleta morada"><span style="--swatch-one:#d8b4fe;--swatch-two:#c084fc;--swatch-three:#f9a8d4"></span></button>
-                <button class="palette-swatch" data-palette="sunset" title="Naranja" aria-label="Paleta naranja"><span style="--swatch-one:#fbbf24;--swatch-two:#fb7185;--swatch-three:#fdba74"></span></button>
-            </div>
-        </div>
         <div class="side-bottom">Sesión activa: <strong id="activeUser"></strong><br><button class="logout-btn" id="logoutBtn" type="button">Cerrar sesión</button></div>
     </aside>
     <main>
+        <div id="summaryView">
         <header class="topbar"><div><div class="eyebrow" id="todayLabel">Resumen financiero</div><h1>Hola, aquí está tu mes.</h1><div class="eyebrow">Controla tus pagos sin perder el ritmo.</div></div><div class="actions"><button class="btn btn-light" id="exportBtn">↥ <span>Exportar</span></button><button class="btn btn-dark" id="addBtn">＋ <span>Nuevo pago</span></button></div></header>
         <section class="overview"><article class="stat primary"><div class="stat-label">Gasto total del mes</div><div class="amount" id="monthTotal">$ 0 <small>COP</small></div><span class="delta" id="monthDelta">0 pagos</span></article><article class="stat"><div class="stat-label">Promedio diario</div><div class="amount" id="dailyAverage">$ 0</div></article><article class="stat"><div class="stat-label">Categoría principal</div><div class="amount" id="topCategory">—</div></article></section>
-        <section class="panel simulator-panel hidden" id="simulatorSection">
-            <div class="panel-head"><h2>Simulador de presupuesto semanal</h2></div>
-            <div class="simulator-grid">
-                <div class="simulator-form">
-                    <label>Ingreso mensual<input type="text" id="simulatorIncome" inputmode="numeric" data-currency-input placeholder="2.500.000"></label>
-                    <label>Gasto semanal actual<input type="text" id="simulatorWeekSpend" inputmode="numeric" data-currency-input placeholder="300.000"></label>
-                    <label>¿Cuánto quieres ahorrar?<input type="text" id="simulatorSavingsGoal" inputmode="numeric" data-currency-input placeholder="500.000"></label>
-                    <button type="button" class="btn btn-dark" id="simulateBtn">Calcular recomendación</button>
-                </div>
-                <div class="simulator-report" id="simulatorReport">
-                    <div class="report-line"><span>Cuánto puedes gastar</span><strong id="simulatorSpendLimit">$ 0</strong></div>
-                    <div class="report-line"><span>Gasto real de la semana</span><strong id="simulatorActualSpend">$ 0</strong></div>
-                    <div class="report-line"><span>Pagos en la semana</span><strong id="simulatorWeekCount">0</strong></div>
-                    <div class="report-line"><span>Meta de ahorro</span><strong id="simulatorTargetSave">$ 0</strong></div>
-                    <div class="report-line"><span>Recomendación</span><strong id="simulatorAdvice">—</strong></div>
-                    <p id="simulatorSummary">Ingresa tus ingresos y gastos para ver un plan realista.</p>
-                </div>
-            </div>
-        </section>
-        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="category-toggle-row"><button type="button" class="toggle-chart-btn" id="toggleCategoryChart" aria-pressed="false">Mostrar pastel</button></div><div class="category-chart-panel hidden" id="categoryChartPanel"><div class="donut-chart" id="categoryChart"><div class="donut-center"><strong id="categoryChartTotal">$ 0</strong></div><div class="chart-tooltip" id="chartTooltip">Sin datos</div></div></div><div class="categories" id="categories"></div></section></div>
+        <section class="panel status-summary-panel"><div class="panel-head"><h2>Promedio por estado</h2><span class="eyebrow">Mes seleccionado</span></div><div class="table-wrap"><table class="status-summary-table"><thead><tr><th>Estado</th><th>Pagos</th><th style="text-align:right">Total</th><th style="text-align:right">Promedio por pago</th></tr></thead><tbody id="statusAverages"></tbody></table></div></section>
+        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="category-toggle-row"><button type="button" class="toggle-chart-btn" id="toggleCategoryChart" aria-pressed="false">Mostrar pastel</button></div><div class="category-chart-panel hidden" id="categoryChartPanel"><div class="donut-chart" id="categoryChart"><div class="donut-center"><strong id="categoryChartTotal">$ 0</strong></div><div class="chart-tooltip" id="chartTooltip">Sin datos</div></div></div><div class="budget-banner hidden" id="budgetBanner" role="status"></div><div class="categories" id="categories"></div></section></div>
         <section class="panel" style="margin-top:16px">
             <div class="panel-head"><h2>Pagos recientes</h2><button class="eyebrow" id="clearBtn" style="background:none;color:var(--muted);cursor:pointer">Limpiar todo</button></div>
             <div class="filters-row">
                 <label>Desde<input type="date" id="filterDateFrom"></label>
                 <label>Hasta<input type="date" id="filterDateTo"></label>
                 <label>Categoría<select id="filterCategory"><option value="">Todas</option></select></label>
+                <label>Estado<select id="filterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
                 <div class="filter-actions">
                     <div class="filter-total"><span>Total filtrado</span><strong id="selectedTotal">$ 0</strong></div>
                 </div>
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th><th></th></tr></thead>
+                    <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Importe</th><th></th></tr></thead>
                     <tbody id="payments"></tbody>
                 </table>
                 <div class="empty hidden" id="emptyState">Todavía no hay pagos. Añade el primero para empezar.</div>
@@ -95,14 +75,304 @@
                 <button class="btn btn-light" type="button" id="nextPage">Siguiente</button>
             </div>
         </section>
+        </div>
+        <section class="simulator-view hidden" id="simulatorView">
+            <header class="topbar">
+                <div><div class="eyebrow">Plan semanal</div><h1>Simulador con tus pagos reales</h1><div class="eyebrow">Calculado con lo que realmente gastaste este mes.</div></div>
+                <div class="actions">
+                    <button class="btn btn-light" id="simTourBtn" type="button">? <span>¿Cómo usarlo?</span></button>
+                    <button class="btn btn-light" id="simulatorRefreshBtn" type="button">↻ <span>Actualizar</span></button>
+                </div>
+            </header>
+
+            <section class="panel simulator-panel">
+                <div class="panel-head"><h2>Tu situación</h2><span class="eyebrow" id="simulatorMonthLabel">Mes en curso</span></div>
+                <div class="simulator-grid">
+                    <div class="simulator-form">
+                        <label>Ingreso mensual<input type="text" id="simulatorIncome" inputmode="numeric" data-currency-input placeholder="2.500.000"></label>
+                        <div class="simulator-real">
+                            <div class="eyebrow">Gasto real del mes</div>
+                            <strong id="simulatorRealMonth">$ 0</strong>
+                            <span id="simulatorRealCount">0 pagos</span>
+                        </div>
+                        <button type="button" class="btn btn-dark" id="simulateBtn">Recalcular plan</button>
+                        <p class="savings-tip">Tus gastos, categorías y semanas restantes salen de tus pagos registrados: solo pones tu ingreso.</p>
+                        <a class="simulator-link" href="#" id="simulatorToSavings">¿Tienes una meta? Crea tu plan de ahorro →</a>
+                    </div>
+                    <div class="simulator-report" id="simulatorReport">
+                        <div class="report-line"><span>Puedes gastar esta semana</span><strong id="simulatorSpendLimit">$ 0</strong></div>
+                        <div class="report-line"><span>Gasto real de la semana</span><strong id="simulatorActualSpend">$ 0</strong></div>
+                        <div class="report-line"><span>Margen de la semana</span><strong id="simulatorMargin">$ 0</strong></div>
+                        <div class="report-line"><span>Pagos en la semana</span><strong id="simulatorWeekCount">0</strong></div>
+                        <div class="report-line"><span>Disponible del mes</span><strong id="simulatorMonthAvailable">$ 0</strong></div>
+                        <div class="report-line"><span>Recomendación</span><strong id="simulatorAdvice">—</strong></div>
+                        <p id="simulatorSummary">Ingresa tu ingreso mensual para ver un plan realista.</p>
+                    </div>
+                </div>
+
+                <div class="simulator-breakdown">
+                    <div class="panel-head"><h2>Cómo se reparte tu gasto</h2><span class="eyebrow" id="simulatorBreakdownMonth">Mes en curso</span></div>
+                    <div class="breakdown-grid">
+                        <article class="breakdown-card"><div class="eyebrow">Gastos recurrentes</div><strong id="simFixed">$ 0</strong><p>Categorías que se repiten todos los meses.</p></article>
+                        <article class="breakdown-card"><div class="eyebrow">Gastos variables</div><strong id="simVariable">$ 0</strong><p>Compras puntuales de este mes.</p></article>
+                        <article class="breakdown-card"><div class="eyebrow">Margen del mes</div><strong id="simMonthlyMargin">$ 0</strong><p>Ingreso menos lo que gastaste.</p></article>
+                    </div>
+                    <div class="breakdown-list" id="simulatorBreakdown"></div>
+                </div>
+            </section>
+        </section>
+
+        <section class="savings-view hidden" id="savingsView">
+            <header class="topbar"><div><div class="eyebrow">Plan personal</div><h1>Plan de ahorro</h1><div class="eyebrow">Cuatro pasos hasta tu meta.</div></div>
+                <div class="actions"><button class="btn btn-light" id="savingsTourBtn" type="button">? <span>¿Cómo usarlo?</span></button></div>
+            </header>
+            <section class="panel savings-panel">
+                <div class="panel-head"><h2>Paso a paso</h2><span class="eyebrow" id="savingsStepCounter">Paso 1 de 4</span></div>
+
+                <ol class="stepper" id="savingsStepper">
+                    <li><button type="button" class="step is-active" data-step="1"><span class="step-index">1</span><span class="step-copy"><strong>Meta</strong><em>Qué quieres lograr</em></span></button></li>
+                    <li><button type="button" class="step" data-step="2" disabled><span class="step-index">2</span><span class="step-copy"><strong>Ahorro actual</strong><em>Cuánto llevas</em></span></button></li>
+                    <li><button type="button" class="step" data-step="3" disabled><span class="step-index">3</span><span class="step-copy"><strong>Aporte</strong><em>Cómo vas a ahorrar</em></span></button></li>
+                    <li><button type="button" class="step" data-step="4" disabled><span class="step-index">4</span><span class="step-copy"><strong>Tu plan</strong><em>Proyección completa</em></span></button></li>
+                </ol>
+
+                <div class="savings-steps">
+                    <div class="savings-step is-active" data-step="1">
+                        <div class="step-heading"><span class="eyebrow">Paso 1 · Meta</span><h3>¿Qué quieres lograr?</h3></div>
+                        <div class="savings-grid">
+                            <div class="simulator-form">
+                                <label>Nombre de la meta<input type="text" id="savingsName" maxlength="40" placeholder="Ej. Fondo de emergencia" autocomplete="off"></label>
+                                <label>Meta de ahorro<input type="text" id="savingsGoal" inputmode="numeric" data-currency-input placeholder="5.000.000"></label>
+                            </div>
+                            <div class="simulator-report savings-report">
+                                <div class="report-line"><span>Meta</span><strong id="s1Goal">$ 0</strong></div>
+                                <div class="report-line"><span>Ya tienes ahorrado</span><strong id="s1Current">$ 0</strong></div>
+                                <div class="report-line"><span>Te falta ahorrar</span><strong id="s1Remaining">$ 0</strong></div>
+                                <p class="savings-tip">Escribe el monto total que necesitas. En el paso 2 y 3 indicarás cuánto ya tienes y cuánto aportarás cada mes.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="savings-step" data-step="2">
+                        <div class="step-heading"><span class="eyebrow">Paso 2 · Punto de partida</span><h3>¿Cuánto llevas ahorrado?</h3></div>
+                        <div class="savings-grid">
+                            <div class="simulator-form">
+                                <label>Ya tienes ahorrado<input type="text" id="savingsCurrent" inputmode="numeric" data-currency-input placeholder="500.000"></label>
+                                <p class="savings-tip">Incluye lo que ya está en tu cuenta o alcancía para esta meta. Si es tu primer aporte, deja el campo en cero.</p>
+                            </div>
+                            <div class="simulator-report savings-report">
+                                <div class="report-line"><span>Avance actual</span><strong id="s2Progress">0 %</strong></div>
+                                <div class="report-line"><span>Te falta ahorrar</span><strong id="s2Remaining">$ 0</strong></div>
+                                <div class="savings-progress-track" role="progressbar" aria-label="Progreso de la meta de ahorro" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="savings-progress-fill" id="savingsProgress"></div></div>
+                                <p class="savings-tip" id="savingsProgressHint">Completa el paso anterior para ver tu avance.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="savings-step" data-step="3">
+                        <div class="step-heading"><span class="eyebrow">Paso 3 · Aporte</span><h3>¿Cómo quieres ahorrar?</h3></div>
+                        <div class="savings-grid">
+                            <div class="simulator-form">
+                                <fieldset class="mode-switch">
+                                    <legend class="eyebrow">Elige tu forma de ahorro</legend>
+                                    <label><input type="radio" name="savingsMode" value="monthly" checked> <span>Sé cuánto aporto al mes</span></label>
+                                    <label><input type="radio" name="savingsMode" value="date"> <span>Quiero llegar en una fecha</span></label>
+                                </fieldset>
+                                <label id="savingsMonthlyWrap">Aporte mensual<input type="text" id="savingsMonthly" inputmode="numeric" data-currency-input placeholder="300.000"></label>
+                                <label id="savingsTargetWrap" class="hidden">Fecha objetivo<input type="date" id="savingsTargetDate"></label>
+                                <p class="savings-tip" id="savingsModeHint">Con un aporte fijo calculamos en cuántos meses llegas a tu meta.</p>
+                            </div>
+                            <div class="simulator-report savings-report">
+                                <div class="report-line"><span id="savingsModeLabel">Tiempo estimado</span><strong id="savingsModeValue">—</strong></div>
+                                <div class="report-line"><span>Te falta ahorrar</span><strong id="s3Remaining">$ 0</strong></div>
+                                <p class="savings-tip">Puedes cambiar estos datos cuando quieras: el plan se recalcula al instante.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="savings-step" data-step="4">
+                        <div class="step-heading"><span class="eyebrow">Paso 4 · Resultado</span><h3 id="savingsPlanTitle">Tu plan de ahorro</h3></div>
+                        <div class="savings-grid">
+                            <div class="simulator-report savings-report">
+                                <div class="report-line"><span>Meta de ahorro</span><strong id="savingsGoalResult">$ 0</strong></div>
+                                <div class="report-line"><span>Te falta ahorrar</span><strong id="savingsRemaining">$ 0</strong></div>
+                                <div class="report-line"><span>Aporte mensual</span><strong id="savingsContribution">$ 0</strong></div>
+                                <div class="report-line"><span>Tiempo estimado</span><strong id="savingsDuration">—</strong></div>
+                                <div class="report-line"><span>Fecha estimada</span><strong id="savingsEta">—</strong></div>
+                                <div class="savings-progress-track" role="progressbar" aria-label="Progreso de la meta de ahorro" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="savings-progress-fill" id="savingsResultProgress"></div></div>
+                                <p id="savingsSummary">Completa los pasos anteriores para proyectar tu ahorro.</p>
+                                <div class="step-actions-inline">
+                                    <button type="button" class="btn btn-light" id="savingsEditBtn">← Editar datos</button>
+                                    <button type="button" class="btn btn-light" id="savingsResetBtn">Empezar de nuevo</button>
+                                </div>
+                            </div>
+                            <div class="milestones">
+                                <div class="milestones-head"><span class="eyebrow">Próximos aportes</span></div>
+                                <ul id="savingsMilestones"></ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="step-hint" id="savingsStepHint" role="status"></p>
+
+                <div class="wizard-actions">
+                    <button type="button" class="btn btn-light" id="savingsPrevBtn" hidden>← Anterior</button>
+                    <button type="button" class="btn btn-dark" id="savingsNextBtn">Continuar →</button>
+                </div>
+            </section>
+        </section>
+        <section class="balance-view hidden" id="balanceView">
+            <header class="topbar">
+                <div><div class="eyebrow">Balance general</div><h1>Todo lo que gastaste y pagaste.</h1><div class="eyebrow">Histórico completo de tus movimientos.</div></div>
+                <div class="actions"><button class="btn btn-light" id="balanceExportBtn" type="button">↥ <span>Exportar</span></button></div>
+            </header>
+
+            <section class="overview balance-overview">
+                <article class="stat primary"><div class="stat-label">Gasto histórico</div><div class="amount" id="balanceTotal">$ 0 <small>COP</small></div><span class="delta" id="balanceCount">0 pagos</span></article>
+                <article class="stat"><div class="stat-label">Pagado</div><div class="amount" id="balancePaid">$ 0</div></article>
+                <article class="stat"><div class="stat-label">Pendiente por pagar</div><div class="amount" id="balancePending">$ 0</div></article>
+                <article class="stat"><div class="stat-label">Promedio por pago</div><div class="amount" id="balanceAverage">$ 0</div></article>
+            </section>
+
+            <div class="content-grid balance-grid">
+                <section class="panel">
+                    <div class="panel-head"><h2>Balance por mes</h2><span class="eyebrow">Histórico</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Mes</th><th style="text-align:right">Pagos</th><th style="text-align:right">Pagado</th><th style="text-align:right">Pendiente</th><th style="text-align:right">Total</th></tr></thead>
+                            <tbody id="balanceMonths"></tbody>
+                        </table>
+                        <div class="empty hidden" id="balanceMonthsEmpty">Aún no hay movimientos registrados.</div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head"><h2>Balance por categoría</h2><span class="eyebrow">Histórico</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Categoría</th><th style="text-align:right">Pagos</th><th style="text-align:right">Total</th><th style="text-align:right">Participación</th></tr></thead>
+                            <tbody id="balanceCategories"></tbody>
+                        </table>
+                        <div class="empty hidden" id="balanceCategoriesEmpty">Aún no hay movimientos registrados.</div>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head"><h2>Balance por estado</h2><span class="eyebrow">Histórico</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Estado</th><th style="text-align:right">Pagos</th><th style="text-align:right">Total</th><th style="text-align:right">Participación</th></tr></thead>
+                            <tbody id="balanceStatuses"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="categories-view hidden" id="categoriesView">
+            <header class="topbar">
+                <div><div class="eyebrow">Organización</div><h1>Categorías</h1><div class="eyebrow">Crea, edita y ordena tus rubros.</div></div>
+                <div class="actions"><button class="btn btn-dark" id="newCategoryBtn" type="button">＋ <span>Nueva categoría</span></button></div>
+            </header>
+            <section class="panel categories-panel">
+                <form class="category-editor" id="categoryForm">
+                    <div class="editor-head">
+                        <div>
+                            <div class="eyebrow">Registro</div>
+                            <h3 id="categoryFormTitle">Nueva categoría</h3>
+                        </div>
+                        <p class="savings-tip">Define el nombre y el color con el que aparecerá en tus pagos.</p>
+                    </div>
+                    <div class="form-grid category-form-grid">
+                        <label>Nombre<input name="name" required placeholder="Ej. Salud" maxlength="30"></label>
+                        <label>Presupuesto mensual<input name="budget" data-currency-input inputmode="numeric" placeholder="Sin presupuesto" title="Cuánto quieres gastar al mes en esta categoría (opcional)"></label>
+                        <div class="color-field">
+                            <span class="color-field-label">Color <em id="colorFieldPick">#ff856c</em></span>
+                            <input type="hidden" name="color" value="#ff856c">
+                            <div class="color-palette" id="colorPalette" role="radiogroup" aria-label="Paleta de colores de la categoría"></div>
+                            <span class="color-hint" id="colorPaletteHint" role="status"></span>
+                        </div>
+                    </div>
+                    <div class="editor-foot">
+                        <p class="step-hint category-hint" id="categoryFormHint" role="status"></p>
+                        <div class="editor-actions">
+                            <button type="button" class="btn btn-light" id="cancelCategoryBtn" hidden>Cancelar</button>
+                            <button type="submit" class="btn btn-dark" id="saveCategoryBtn">Crear categoría</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="panel-head categories-table-head">
+                    <h2>Todas tus categorías</h2>
+                    <span class="eyebrow" id="categoriesCount">0 categorías</span>
+                </div>
+                <div class="table-wrap">
+                    <table class="categories-table">
+                        <thead><tr><th>Categoría</th><th>Color</th><th style="text-align:right">Pagos</th><th style="text-align:right">Total</th><th style="text-align:right">Presupuesto</th><th></th></tr></thead>
+                        <tbody id="categoryList"></tbody>
+                    </table>
+                    <div class="empty hidden" id="categoriesEmpty">Aún no hay categorías. Crea la primera con el formulario de arriba.</div>
+                </div>
+            </section>
+        </section>
     </main>
 </div>
-<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
-<div class="modal-backdrop" id="categoryModal"><form class="modal" id="categoryForm"><h2>Gestionar categorías</h2><div class="category-list" id="categoryList"></div><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Salud"></label><label>Color<select name="color"><option value="#ff856c">Coral</option><option value="#88c9ed">Azul</option><option value="#c7f36b">Lima</option><option value="#d5a6e8">Lila</option><option value="#f5ca72">Amarillo</option><option value="#7dd3fc">Celeste</option><option value="#a7f3d0">Verde menta</option><option value="#f9a8d4">Rosa</option><option value="#fca5a5">Rojo suave</option><option value="#c4b5fd">Violeta suave</option></select></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button class="btn btn-dark">Crear categoría</button></div></form></div>
+<div class="modal-backdrop" id="importModal"><div class="modal import-modal"><h2>Importar pagos</h2><p class="import-lead">Sube un archivo <strong>CSV</strong> con tus pagos. El archivo que descargas desde “Exportar” ya cumple esta estructura, así que puedes volver a importarlo tal cual.</p><div class="import-spec"><span class="eyebrow">Estructura del archivo</span><div class="import-table-wrap"><table class="import-table"><thead><tr><th>Concepto</th><th>Categoria</th><th>Fecha</th><th>Estado</th><th>Importe</th><th>Recurrente</th></tr></thead><tbody><tr><td>Arriendo</td><td>Vivienda</td><td>2026-09-01</td><td>Pagado</td><td>900000</td><td>Sí</td></tr><tr><td>Mercado</td><td>Alimentos</td><td>05/09/2026</td><td>Pendiente</td><td>180.000</td><td>No</td></tr></tbody></table></div><ul class="import-notes"><li><strong>Concepto</strong>: texto libre. Es el único campo obligatorio junto con fecha e importe.</li><li><strong>Categoría</strong>: si no existe, se crea sola con un color libre.</li><li><strong>Fecha</strong>: <code>AAAA-MM-DD</code> o <code>DD/MM/AAAA</code>.</li><li><strong>Estado</strong>: Pagado, No pagado o Pendiente.</li><li><strong>Importe</strong>: números solos; acepta <code>180.000</code>.</li><li><strong>Recurrente</strong>: Sí o No. Las columnas pueden venir en otro orden si llevas cabecera.</li><li>Separador <code>,</code> o <code>;</code>, codificación UTF-8. Las filas vacías o repetidas se ignoran.</li></ul></div><div class="modal-actions"><button type="button" class="btn btn-light" id="importTemplateBtn">↓ <span>Descargar plantilla</span></button><button type="button" class="btn btn-light closeModal">Cancelar</button><button type="button" class="btn btn-dark" id="importPickBtn">Elegir archivo CSV</button></div></div></div>
+<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
+
+<!-- Notificaciones de pagos -->
+<div class="notif-widget" id="notifWidget">
+    <button type="button" class="notif-bell" id="notifBell" aria-haspopup="dialog" aria-expanded="false" aria-label="Notificaciones de pagos">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="notif-badge hidden" id="notifBadge">0</span>
+    </button>
+    <div class="notif-panel hidden" id="notifPanel" role="dialog" aria-label="Notificaciones de pagos">
+        <div class="notif-head">
+            <div><div class="eyebrow">Alertas</div><h3>Pagos que requieren atención</h3></div>
+            <button type="button" class="notif-close" id="notifClose" aria-label="Cerrar notificaciones">×</button>
+        </div>
+        <div class="notif-filters" id="notifFilters">
+            <button type="button" class="notif-chip is-active" data-notif-filter="atencion">Atención <span id="notifCountAtencion">0</span></button>
+            <button type="button" class="notif-chip" data-notif-filter="sinpagar">Sin pagar <span id="notifCountPendientes">0</span></button>
+            <button type="button" class="notif-chip" data-notif-filter="pagados">Pagados <span id="notifCountPagados">0</span></button>
+        </div>
+        <div class="notif-list" id="notifList"></div>
+        <div class="notif-foot">
+            <button type="button" class="btn btn-dark" id="notifMarkAll">✓ Marcar todo como visto</button>
+            <button type="button" class="btn btn-light" id="notifSeeAll">Ver todos en la tabla</button>
+        </div>
+    </div>
+</div>
+
+<!-- Guía paso a paso del simulador -->
+<div class="tour-overlay hidden" id="simTour" role="dialog" aria-modal="true" aria-label="Guía del simulador">
+    <div class="tour-spotlight hidden" id="tourSpotlight"></div>
+    <div class="tour-card" id="tourCard">
+        <div class="tour-top">
+            <span class="tour-badge" id="tourStepLabel">Paso 1 de 5</span>
+            <div class="tour-dots" id="tourDots"></div>
+        </div>
+        <div class="tour-heading">
+            <span class="tour-icon" id="tourIcon">1</span>
+            <h3 id="tourTitle">Título</h3>
+        </div>
+        <p id="tourText">Descripción</p>
+        <div class="tour-tip" id="tourTip"></div>
+        <div class="tour-actions">
+            <button type="button" class="btn btn-light" id="tourSkip">Salir</button>
+            <div class="tour-nav">
+                <button type="button" class="btn btn-light" id="tourPrev">← Anterior</button>
+                <button type="button" class="btn btn-dark" id="tourNext">Siguiente →</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="config/firebase-config.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/js/script.js?v=20260830-5"></script>
+<script src="assets/js/script.js?v=20260927-rec4"></script>
 </body>
 </html>

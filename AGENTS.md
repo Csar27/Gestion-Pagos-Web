@@ -1,0 +1,77 @@
+# AGENTS.md
+
+## Project
+
+Static single-page app (vanilla HTML/CSS/JS) for personal payment tracking in COP. No framework, no bundler, no `package.json`.
+
+## Commands
+
+There is no build, test, lint, or typecheck tooling. To run locally:
+
+```bash
+python -m http.server 8000
+# then open http://localhost:8000
+```
+
+Quick syntax check after editing JS:
+
+```bash
+node --check assets/js/script.js
+```
+
+Docker build (must run from the **parent** directory — the Dockerfile copies `Gestión Pagos/`):
+
+```bash
+docker build -f "Gestión Pagos/Dockerfile" -t cartera-pagos .
+docker run --rm -p 8080:80 cartera-pagos
+```
+
+## Architecture
+
+- **Single JS file**: all app logic lives in `assets/js/script.js` (~1.7k lines, loaded last in `index.html`). No modules, no imports, no `defer`.
+- **Firebase via CDN**: compat libraries loaded from `gstatic.com` (v10.12.2) in `index.html`, plus `config/firebase-config.js`. Not installed via npm.
+- **localStorage-first**: payments, categories, theme, and page size persist in `localStorage`; Firestore acts as a per-user sync layer, not the primary store. On load, `hydrateLocalData()` runs first and Firestore fills in afterwards (`loadUserData()`).
+- **Auth**: Google sign-in only (the README mentions email/password but the UI only exposes Google). Without valid Firebase config the app falls back to a local "Modo local" session.
+- **Views**: `#summaryView`, `#simulatorView`, `#savingsView`, `#balanceView`, `#categoriesView` — toggled via the `hidden` class. `#authScreen` gates the whole `.app`. Nav buttons in the sidebar call `showView()` + `setActiveNav()`.
+- **Cache busting**: CSS/JS are loaded with a `?v=` query param (currently `?v=20260927-rec4`). **Bump it in `index.html` (3 places: stylesheet, script, favicon) on every ship** — otherwise users keep stale assets.
+
+### localStorage keys
+
+| Key | Contents |
+| --- | --- |
+| `cartera_payments` | All payments (array) |
+| `cartera_categories` | All categories (array, colors deduped) |
+| `cartera_page_size` | Pagination size for the payments table |
+| `cartera_theme` | `dark` / `light` |
+| `cartera_simulator` | Simulator income input |
+| `cartera_simulator_tour` | `done` once the Simulator guide is finished |
+| `cartera_savings_tour` | `done` once the Savings guide is finished |
+| `cartera_notif_seen` | Map `paymentId -> signature` of notifications already dismissed |
+
+### Notable UI subsystems
+
+- **Guided tours** (Simulator and Savings): one reusable engine in `script.js` (`startTour(steps, key)`, `simTourStart`, `savingsTourStart`, spotlight `#tourSpotlight` + card `#tourCard`). Steps are declarative objects `{ target, title, text, tip }`; auto-starts on first visit and can be replayed from the "¿Cómo usarlo?" button.
+- **Notification widget**: floating bell `#notifWidget` with panel, chips (`atencion` = unseen alerts, `sinpagar` = all unpaid, `pagados`), "Marcar pagado", "Ver pago" (scrolls + flashes the row via `paymentFilters.focusId`) and "Marcar todo como visto". Alert kind is derived from the date: `vencido` (past due and unpaid), `pendiente`, `pagado`. Badge counts **unseen** alerts only.
+- **Category color palette**: `CATEGORY_PALETTE` (30 named colors) rendered by `renderColorPalette()` into `#colorPalette`. A color may be used by only one category: `categoryColorOwner()` blocks reuse (hint + shake), `freeCategoryColor()` gives the form a free default, and `normalizeCategoryColors()` repairs duplicates. Colors are used as dots/swatches only — never as text backgrounds.
+- **Savings wizard**: 4 steps (`goToSavingsStep`, `#savingsStepper`, `updateSavingsSimulator`) persisted through `saveSavingsPlan()`.
+- **Recurring payments**: a payment may carry `recurring: true` (checkbox "Repetir cada mes" in the payment modal, row badge `↻ mensual`). `syncRecurringPayments()` runs at startup, after `loadUserData()` and after saving a payment: for every recurring seed it clones the payment forward month by month **up to the current month only**, skipping any month that already has the same concept + category (never duplicates, never future-dates). Clones are born `pendiente`.
+- **CSV import/export**: `exportData()` writes `Concepto,Categoria,Fecha,Estado,Importe,Recurrente` (quoted, `,`, UTF‑8 BOM). `importData()` / `parseCsvRows()` accept `,` or `;` (a line that resolves to a single cell but contains ≥2 of the *other* delimiter is re-split, so mixed files also work), quoted cells, header or fixed order, `YYYY-MM-DD` or `DD/MM/YYYY` dates, Spanish status labels, and optional `Recurrente`. Missing categories are created with `freeCategoryColor()`; rows without concept/date/amount or that already exist are skipped. The flow is **`#importNav` → `#importModal`** (structure help + example table) with `#importPickBtn` → `#importFile`, and `#importTemplateBtn` downloads `plantilla-pagos.csv` (header + 3 rows marked “Ejemplo:”). The modal closes itself after a file is read.
+- **Category budgets**: `category.budget` = monthly COP limit set from the category form (`budget` input, `data-currency-input`). `categoryBudgetState()` returns `ok` / `warn` (≥80%) / `exceeded` (≥100%); it drives the progress bars in the Summary "Por categoría" list, the `#budgetBanner` alert, and the extra "Presupuesto" column of the categories table.
+- **Logo**: inline SVG `.brand-mark` in the header/sidebar (theme-aware via CSS: `body.dark .brand-mark rect { fill:var(--lime) }`), plus files in `assets/img/` (`logo-mark.svg`, `logo.svg`, `logo-light.svg`) used as favicon.
+
+## Firebase setup
+
+1. Copy your web app config into `config/firebase-config.js` (already populated for the `gestion-pagos-web` project).
+2. Enable **Google** sign-in in Firebase Console → Authentication.
+3. Publish `firestore.rules` manually in Firebase Console → Firestore → Rules. The repo file is the source of truth.
+4. Add `localhost` to Authentication → Settings → Authorized domains if testing locally.
+
+## Conventions
+
+- All user-facing text is in Spanish (including tour steps, notifications, and validation messages).
+- Currency is Colombian pesos (COP) — formatting logic is in `script.js` (`money()`).
+- Payment statuses: `pagado`, `no_pagado`, `pendiente`.
+- Category colors are normalized to avoid duplicates; `persistCategories()` handles dedup and Firestore sync.
+- CSV files are the app's interchange format: keep the header `Concepto,Categoria,Fecha,Estado,Importe,Recurrente` in sync between `exportData()` and `importData()`.
+- No build step: avoid ES modules, imports, JSX/TS, or npm-only syntax. Use `node --check` to validate JS.
+- When changing UI, verify both themes (dark/light) and the mobile breakpoints at `900px`, `600px`, and `420px` in `style.css`.
