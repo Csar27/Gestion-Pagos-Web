@@ -498,6 +498,52 @@ body.dark .auth-error { color:#ff9a86; }
 .budget-none { color:var(--muted); opacity:.55; }
 
 /* =========================================================
+   Reportes (vista detallada)
+   ========================================================= */
+.report-presets { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
+.report-presets .chip { min-height:40px; padding:9px 15px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--muted); font:700 11px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.06em; cursor:pointer; transition:border-color .15s ease, background .15s ease, color .15s ease; }
+.report-presets .chip:hover { border-color:var(--ink); color:var(--ink); }
+.report-presets .chip.is-active { background:var(--ink); border-color:var(--ink); color:var(--paper); }
+body.dark .report-presets .chip { color:#b9c6b6; }
+body.dark .report-presets .chip:hover { border-color:rgba(199,243,107,.55); color:var(--lime); }
+body.dark .report-presets .chip.is-active { background:var(--lime); border-color:var(--lime); color:#171c16; }
+
+.report-delta { float:right; max-width:56%; margin-top:25px; font:11px 'DM Mono',monospace; color:var(--muted); line-height:1.35; text-align:right; }
+.report-delta.up { color:#c2452b; }
+.report-delta.down { color:#4b8a1f; }
+body.dark .report-delta.up { color:#ff9a86; }
+body.dark .report-delta.down { color:#a0df53; }
+/* En los KPI el delta va debajo del importe, sin flotar encima */
+.report-kpis .report-delta { float:none; clear:both; display:block; max-width:none; margin-top:9px; text-align:left; }
+/* Tarjeta principal: se invierte entre temas (oscura en claro, lima en oscuro) */
+.primary .report-delta { color:#aeb8aa; }
+.primary .report-delta.up { color:#ff9a86; }
+.primary .report-delta.down { color:#a0df53; }
+body.dark .primary .report-delta { color:#3f4a3d; }
+body.dark .primary .report-delta.up { color:#a3341a; }
+body.dark .primary .report-delta.down { color:#315422; }
+
+.report-summary { list-style:none; margin:0; padding:0; display:grid; gap:11px; }
+.report-summary li { position:relative; padding-left:19px; font-size:13.5px; line-height:1.6; color:var(--ink); overflow-wrap:anywhere; }
+.report-summary li::before { content:''; position:absolute; left:1px; top:.55em; width:7px; height:7px; border-radius:50%; background:#7aa32b; }
+body.dark .report-summary li::before { background:var(--lime); }
+.report-summary strong { font-weight:800; }
+
+.report-bars { display:grid; gap:10px; margin:0 0 18px; }
+.report-bar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 10px; align-items:center; }
+.report-bar-label { grid-area:1 / 1; font:10px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.report-bar strong { grid-area:1 / 2; font-size:12.5px; white-space:nowrap; }
+.report-bar-track { grid-area:2 / 1 / 3 / 3; height:10px; border-radius:999px; background:rgba(120,132,118,.18); overflow:hidden; }
+.report-bar-track i { display:block; height:100%; min-width:4px; border-radius:inherit; background:#8bc34a; transition:width .4s ease; }
+body.dark .report-bar-track { background:rgba(199,243,107,.14); }
+body.dark .report-bar-track i { background:var(--lime); }
+
+.report-note { margin:-4px 0 14px; font-size:12px; line-height:1.55; color:var(--muted); }
+.report-empty { padding:18px 8px; text-align:center; color:var(--muted); font-size:13px; }
+.report-total-row td { border-top:2px solid var(--line); font-weight:800; }
+.reports-grid { grid-template-columns:minmax(0,1fr); }
+
+/* =========================================================
    Mobile-first.
    Base = móvil (320–599 px).
    Escalas: 600 px (teléfono grande), 768 px (tablet),
@@ -591,4 +637,64 @@ body.dark .auth-error { color:#ff9a86; }
 
 @media (prefers-reduced-motion:reduce) {
     *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+}
+
+/* =========================================================
+   Reportes: escalas (van después para no ser eclipsadas)
+   ========================================================= */
+@media (min-width:600px) {
+    .report-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .report-bar { grid-template-columns:minmax(96px,auto) minmax(0,1fr) auto; gap:12px; }
+    .report-bar-label { grid-area:1 / 1; }
+    .report-bar-track { grid-area:1 / 2; }
+    .report-bar strong { grid-area:1 / 3; }
+}
+@media (min-width:768px) {
+    /* Los paneles de Reportes van en una columna: las tablas necesitan el ancho completo */
+    .reports-grid { grid-template-columns:minmax(0,1fr); }
+}
+@media (min-width:1024px) {
+    .report-kpis { grid-template-columns:repeat(4,minmax(0,1fr)); }
+}
+
+/* =========================================================
+   Impresión: "Imprimir / PDF" desde Reportes sale limpio
+   en blanco y negro, también partiendo del tema oscuro.
+   ========================================================= */
+@media print {
+    @page { margin:14mm; }
+    aside, .nav-toggle, #notifWidget, #tourCard, #tourSpotlight, .modal-backdrop, .auth-screen, .topbar .actions, .report-filters, .pagination, .row-actions, .empty { display:none !important; }
+    body, body.dark { background:#fff !important; }
+    .app { display:block !important; grid-template-columns:minmax(0,1fr) !important; }
+    main { padding:0 !important; max-width:none !important; }
+    .panel, .stat, .table-wrap { box-shadow:none !important; border-color:#d9ddd6 !important; background:#fff !important; }
+    .table-wrap { max-height:none !important; overflow:visible !important; --table-bg:#fff !important; }
+    table { min-width:0 !important; width:100% !important; }
+    .panel { break-inside:avoid; margin-bottom:9mm; }
+    .report-bars, .report-summary, .report-bar, .overview { break-inside:avoid; }
+    h1 { font-size:24px; }
+    /* Paleta clara forzada aunque la app esté en tema oscuro */
+    body.dark { --ink:#20251f; --muted:#5c6459; --line:#d9ddd6; --row-line:#e7ebe4; --paper:#fff; --white:#fff; --surface-alt:#fff; color:#20251f !important; }
+    body.dark .stat, body.dark .panel, body.dark .table-wrap, body.dark .btn-light, body.dark .simulator-report { background:#fff !important; color:#20251f !important; border-color:#d9ddd6 !important; }
+    body.dark .recurring-tag { color:#5c6459 !important; background:rgba(120,132,118,.16) !important; }
+    body.dark .budget-cell { color:#5c6459; }
+    body.dark .budget-cell em { background:rgba(120,132,118,.16); color:#5c6459 !important; }
+    body.dark .budget-cell em.is-warn { background:rgba(245,202,114,.28); color:#8a6102 !important; }
+    body.dark .budget-cell em.is-exceeded { background:rgba(239,68,68,.18); color:#c2452b !important; }
+    body.dark .budget-cell em.is-ok { color:#4b8a1f !important; }
+    body.dark .budget-none { color:#727a70; }
+    body.dark .budget-banner.is-danger { color:#c2452b !important; }
+    body.dark .report-delta.up { color:#c2452b !important; }
+    body.dark .report-delta.down { color:#4b8a1f !important; }
+    /* Tarjeta principal: en papel siempre clara y con texto oscuro */
+    .stat.primary, body.dark .stat.primary { background:#fff !important; color:#20251f !important; border-color:#d9ddd6 !important; }
+    .primary .stat-label { color:#5c6459 !important; }
+    .report-delta, .primary .report-delta, body.dark .report-delta, body.dark .primary .report-delta { color:#5c6459 !important; }
+    .report-delta.up, .primary .report-delta.up, body.dark .report-delta.up, body.dark .primary .report-delta.up { color:#c2452b !important; }
+    .report-delta.down, .primary .report-delta.down, body.dark .report-delta.down, body.dark .primary .report-delta.down { color:#4b8a1f !important; }
+    body.dark .report-summary li::before { background:#7aa32b !important; }
+    body.dark .report-bar-track { background:rgba(120,132,118,.18) !important; }
+    body.dark .report-bar-track i { background:#8bc34a !important; }
+    body.dark .chart .bar { background:#88c9ed !important; }
+    body.dark .chart .bar.current { background:#ff856c !important; }
 }

@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20260927-mf6">
-    <link rel="stylesheet" href="assets/css/style.css?v=20260927-mf6">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20260927-mf9">
+    <link rel="stylesheet" href="assets/css/style.css?v=20260927-mf9">
 </head>
 <body>
 <section class="auth-screen" id="authScreen">
@@ -29,7 +29,7 @@
             <button id="savingsNav"><span class="nav-icon">$</span>Ahorro</button>
             <button id="balanceNav"><span class="nav-icon">▤</span>Balance</button>
             <button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button>
-            <button id="exportNav"><span class="nav-icon">↥</span>Exportar datos</button>
+            <button id="reportsNav"><span class="nav-icon">▥</span>Reportes</button>
             <button id="importNav"><span class="nav-icon">↧</span>Importar datos</button>
             <input type="file" id="importFile" accept=".csv,text/csv" hidden>
             <button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button>
@@ -316,6 +316,106 @@
                 </div>
             </section>
         </section>
+
+        <section class="hidden" id="reportsView">
+            <header class="topbar">
+                <div>
+                    <div class="eyebrow">Análisis detallado</div>
+                    <h1>Reportes de tus pagos.</h1>
+                    <div class="eyebrow" id="reportRangeLabel">Últimos 3 meses</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-light" type="button" id="reportPrintBtn">Imprimir / PDF</button>
+                    <button class="btn btn-light" type="button" id="reportCsvBtn">↓ <span>Informe CSV</span></button>
+                    <button class="btn btn-light" type="button" id="reportBackupBtn">↓ <span>Copia completa</span></button>
+                </div>
+            </header>
+
+            <section class="panel report-panel">
+                <div class="panel-head"><h2>Rango del informe</h2><span class="eyebrow" id="reportMeta">—</span></div>
+                <div class="filters-row report-filters">
+                    <label>Desde<input type="date" id="reportFrom" aria-label="Fecha inicial del informe"></label>
+                    <label>Hasta<input type="date" id="reportTo" aria-label="Fecha final del informe"></label>
+                    <div class="report-presets" role="group" aria-label="Rangos rápidos">
+                        <button type="button" class="chip" data-range="month">Este mes</button>
+                        <button type="button" class="chip is-active" data-range="quarter">3 meses</button>
+                        <button type="button" class="chip" data-range="year">Este año</button>
+                        <button type="button" class="chip" data-range="all">Todo</button>
+                    </div>
+                </div>
+            </section>
+            <br>
+            <section class="overview report-kpis" id="reportKpis">
+                <article class="stat primary">
+                    <div class="stat-label">Gasto del periodo</div>
+                    <div class="amount" id="reportTotal">$ 0 <small>COP</small></div>
+                    <span class="report-delta" id="reportTotalDelta">—</span>
+                </article>
+                <article class="stat">
+                    <div class="stat-label">Pagado</div>
+                    <div class="amount" id="reportPaid">$ 0</div>
+                    <span class="report-delta" id="reportPaidDelta">—</span>
+                </article>
+                <article class="stat">
+                    <div class="stat-label">Pendiente por pagar</div>
+                    <div class="amount" id="reportPending">$ 0</div>
+                    <span class="report-delta" id="reportPendingDelta">—</span>
+                </article>
+                <article class="stat">
+                    <div class="stat-label">Promedio por pago</div>
+                    <div class="amount" id="reportAverage">$ 0</div>
+                    <span class="report-delta" id="reportAverageDelta">—</span>
+                </article>
+            </section>
+
+            <div class="content-grid reports-grid">
+                <section class="panel">
+                    <div class="panel-head"><h2>Resumen ejecutivo</h2><span class="eyebrow">Periodo actual vs. anterior</span></div>
+                    <ul class="report-summary" id="reportSummary"></ul>
+                </section>
+                <section class="panel">
+                    <div class="panel-head"><h2>Por estado de pago</h2><span class="eyebrow">Reparto del total</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Estado</th><th style="text-align:right">Pagos</th><th style="text-align:right">Monto</th><th style="text-align:right">%</th><th style="text-align:right">Promedio</th></tr></thead>
+                            <tbody id="reportStatus"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+            <br>
+            <section class="panel">
+                <div class="panel-head"><h2>Evolución mensual</h2><span class="eyebrow" id="reportMonthsMeta">—</span></div>
+                <div class="report-bars" id="reportBars"></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Mes</th><th style="text-align:right">Pagos</th><th style="text-align:right">Pagado</th><th style="text-align:right">Pendiente</th><th style="text-align:right">Total</th><th style="text-align:right">Δ</th></tr></thead>
+                        <tbody id="reportMonths"></tbody>
+                    </table>
+                </div>
+            </section>
+            <br>
+            <section class="panel">
+                <div class="panel-head"><h2>Por categoría</h2><span class="eyebrow" id="reportCategoriesMeta">—</span></div>
+                <p class="report-note">El presupuesto es mensual: se compara contra el gasto promedio de cada mes dentro del rango seleccionado.</p>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Categoría</th><th style="text-align:right">Pagos</th><th style="text-align:right">Monto</th><th style="text-align:right">%</th><th>Presupuesto</th></tr></thead>
+                        <tbody id="reportCategories"></tbody>
+                    </table>
+                </div>
+            </section>
+            <br>
+            <section class="panel">
+                <div class="panel-head"><h2>Mayores pagos del periodo</h2><span class="eyebrow" id="reportTopMeta">Top 10</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th></tr></thead>
+                        <tbody id="reportTop"></tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
     </main>
 </div>
 <div class="modal-backdrop" id="importModal"><div class="modal import-modal"><h2>Importar pagos</h2><p class="import-lead">Sube un archivo <strong>CSV</strong> con tus pagos. El archivo que descargas desde “Exportar” ya cumple esta estructura, así que puedes volver a importarlo tal cual.</p><div class="import-spec"><span class="eyebrow">Estructura del archivo</span><div class="import-table-wrap"><table class="import-table"><thead><tr><th>Concepto</th><th>Categoria</th><th>Fecha</th><th>Estado</th><th>Importe</th><th>Recurrente</th></tr></thead><tbody><tr><td>Arriendo</td><td>Vivienda</td><td>2026-09-01</td><td>Pagado</td><td>900000</td><td>Sí</td></tr><tr><td>Mercado</td><td>Alimentos</td><td>05/09/2026</td><td>Pendiente</td><td>180.000</td><td>No</td></tr></tbody></table></div><ul class="import-notes"><li><strong>Concepto</strong>: texto libre. Es el único campo obligatorio junto con fecha e importe.</li><li><strong>Categoría</strong>: si no existe, se crea sola con un color libre.</li><li><strong>Fecha</strong>: <code>AAAA-MM-DD</code> o <code>DD/MM/AAAA</code>.</li><li><strong>Estado</strong>: Pagado, No pagado o Pendiente.</li><li><strong>Importe</strong>: números solos; acepta <code>180.000</code>.</li><li><strong>Recurrente</strong>: Sí o No. Las columnas pueden venir en otro orden si llevas cabecera.</li><li>Separador <code>,</code> o <code>;</code>, codificación UTF-8. Las filas vacías o repetidas se ignoran.</li></ul></div><div class="modal-actions"><button type="button" class="btn btn-light" id="importTemplateBtn">↓ <span>Descargar plantilla</span></button><button type="button" class="btn btn-light closeModal">Cancelar</button><button type="button" class="btn btn-dark" id="importPickBtn">Elegir archivo CSV</button></div></div></div>
@@ -373,6 +473,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/js/script.js?v=20260927-mf6"></script>
+<script src="assets/js/script.js?v=20260927-mf9"></script>
 </body>
 </html>

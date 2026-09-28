@@ -455,6 +455,7 @@ function render() {
     renderRecentPayments();
     renderBalance(aggregates);
     renderNotifications();
+    renderReports();
     if (document.getElementById('simulatorIncome')) {
         updateSimulator();
     }
@@ -519,6 +520,230 @@ function renderBalance(aggregates) {
         const share = data.total ? entry.total / data.total * 100 : 0;
         return `<tr><td>${paymentStatusLabel(status)}</td><td style="text-align:right">${entry.count}</td><td style="text-align:right;font-weight:800">${money(entry.total)}</td><td style="text-align:right">${share.toFixed(1)} %</td></tr>`;
     }).join('');
+}
+// ---------- Reportes ----------
+let reportRange = { from:'', to:'', preset:'quarter' };
+
+function reportPresetRange(preset) {
+    const today = new Date();
+    const to = formatDateKey(today);
+    if (preset === 'all') return { from:'', to:'' };
+    if (preset === 'month') return { from: formatDateKey(new Date(today.getFullYear(), today.getMonth(), 1)), to };
+    if (preset === 'year') return { from: `${today.getFullYear()}-01-01`, to };
+    return { from: formatDateKey(new Date(today.getFullYear(), today.getMonth() - 2, 1)), to };
+}
+function reportDateLabel(key) {
+    if (!key) return null;
+    return new Date(`${key}T12:00:00`).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' });
+}
+function reportRangeLabel(range) {
+    const from = reportDateLabel(range.from);
+    const to = reportDateLabel(range.to);
+    if (!from && !to) return 'Todo el historial';
+    if (!from) return `Hasta el ${to}`;
+    if (!to) return `Desde el ${from}`;
+    return `${from} – ${to}`;
+}
+function reportPreviousRange(range) {
+    if (!range.from || !range.to) return null;
+    const from = new Date(`${range.from}T12:00:00`);
+    const to = new Date(`${range.to}T12:00:00`);
+    const days = Math.round((to - from) / 86400000) + 1;
+    if (!(days > 0)) return null;
+    const previousTo = new Date(from);
+    previousTo.setDate(previousTo.getDate() - 1);
+    const previousFrom = new Date(previousTo);
+    previousFrom.setDate(previousFrom.getDate() - days + 1);
+    return { from: formatDateKey(previousFrom), to: formatDateKey(previousTo), days };
+}
+function reportShare(part, total) {
+    return total > 0 ? (Number(part) / total) * 100 : 0;
+}
+function reportDeltaText(current, previous, reference) {
+    if (previous === null || previous === undefined) return { text: reference === 'mes' ? 'primer mes del rango' : 'sin periodo anterior', dir: '' };
+    if (!previous) return { text: current ? 'sin base de comparación' : 'sin cambios', dir: '' };
+    const pct = ((Number(current) - previous) / Math.abs(previous)) * 100;
+    if (Math.abs(pct) < 0.5) return { text: 'sin cambios', dir: '' };
+    return { text: `${pct > 0 ? '+' : '-'}${Math.abs(pct).toFixed(1)} % ${reference}`, dir: pct > 0 ? 'up' : 'down' };
+}
+function computeReports() {
+    const range = { from: reportRange.from, to: reportRange.to };
+    const list = payments.filter(payment => (!range.from || payment.date >= range.from) && (!range.to || payment.date <= range.to));
+    const aggregate = buildPaymentsAggregate(list);
+    const previousRange = reportPreviousRange(range);
+    const previousList = previousRange ? payments.filter(payment => payment.date >= previousRange.from && payment.date <= previousRange.to) : [];
+    const previousAggregate = previousRange ? buildPaymentsAggregate(previousList) : null;
+
+    const months = Array.from(aggregate.byMonth.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const monthCount = Math.max(1, months.length);
+    const maxMonth = months.reduce((max, month) => Math.max(max, Number(month.total) || 0), 0) || 1;
+    const average = aggregate.count ? Math.round(aggregate.total / aggregate.count) : 0;
+    const previousAverage = previousAggregate && previousAggregate.count ? Math.round(previousAggregate.total / previousAggregate.count) : null;
+    const paidShare = reportShare(aggregate.paid, aggregate.total);
+    const pendingShare = reportShare(aggregate.pending, aggregate.total);
+
+    const statuses = PAYMENT_STATUSES.map(key => {
+        const entry = aggregate.byStatus.get(key) || { count: 0, total: 0 };
+        return { key, label: paymentStatusLabel(key), count: entry.count, total: entry.total, share: reportShare(entry.total, aggregate.total), average: entry.count ? Math.round(entry.total / entry.count) : 0 };
+    });
+
+    const categories = Array.from(aggregate.byCategory.values()).sort((a, b) => b.total - a.total).map(entry => {
+        const category = categoriesList().find(item => item.name === entry.name) || {};
+        const averageMonthly = entry.total / monthCount;
+        const budget = Number(category.budget) || 0;
+        return {
+            name: entry.name,
+            color: category.color || '#dfe4dc',
+            count: entry.count,
+            total: entry.total,
+            share: reportShare(entry.total, aggregate.total),
+            budget,
+            budgetState: categoryBudgetState(averageMonthly, budget)
+        };
+    });
+
+    const top = list.slice().sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0)).slice(0, 10);
+    const peakMonth = months.reduce((best, month) => (!best || month.total > best.total ? month : best), null);
+    const budgetExceeded = categories.filter(entry => entry.budgetState && entry.budgetState.key === 'exceeded');
+    const budgetWarn = categories.filter(entry => entry.budgetState && entry.budgetState.key === 'warn');
+    const topFiveShare = reportShare(top.slice(0, 5).reduce((sum, payment) => sum + Number(payment.amount || 0), 0), aggregate.total);
+
+    const hasPrevious = Boolean(previousAggregate && previousAggregate.count);
+    const deltas = {
+        total: reportDeltaText(aggregate.total, hasPrevious ? previousAggregate.total : null, 'vs. periodo anterior'),
+        paid: reportDeltaText(aggregate.paid, hasPrevious ? previousAggregate.paid : null, 'vs. periodo anterior'),
+        pending: reportDeltaText(aggregate.pending, hasPrevious ? previousAggregate.pending : null, 'vs. periodo anterior'),
+        average: reportDeltaText(average, hasPrevious ? previousAverage : null, 'vs. periodo anterior')
+    };
+
+    const days = range.from && range.to ? Math.round((new Date(`${range.to}T12:00:00`) - new Date(`${range.from}T12:00:00`)) / 86400000) + 1 : null;
+    const summary = [];
+    if (!aggregate.count) {
+        summary.push('No hay pagos dentro de este rango: cambia las fechas o prueba otro rango rápido.');
+    } else {
+        const previousPhrase = !hasPrevious
+            ? ' (sin periodo anterior)'
+            : deltas.total.dir === 'up'
+                ? `, <strong>${deltas.total.text.replace(' vs. periodo anterior', '')}</strong> por encima de los <strong>${money(previousAggregate.total)}</strong> del periodo anterior`
+                : deltas.total.dir === 'down'
+                    ? `, <strong>${deltas.total.text.replace(' vs. periodo anterior', '')}</strong> por debajo de los <strong>${money(previousAggregate.total)}</strong> del periodo anterior`
+                    : `, prácticamente igual a los <strong>${money(previousAggregate.total)}</strong> del periodo anterior`;
+        summary.push(`Se registran <strong>${aggregate.count}</strong> pago${aggregate.count === 1 ? '' : 's'} por <strong>${money(aggregate.total)}</strong>${previousPhrase}.`);
+        summary.push(`Se pagó el <strong>${paidShare.toFixed(1)} %</strong> del total y quedan <strong>${money(aggregate.pending)}</strong> pendientes${aggregate.pending ? ` en ${statuses.filter(entry => entry.key !== 'pagado').reduce((sum, entry) => sum + entry.count, 0)} pagos` : ''}.`);
+        if (top.length) summary.push(`El pago más alto fue <strong>${money(Number(top[0].amount))}</strong> por “${escapeHtml(top[0].name)}”; los 5 mayores concentran el <strong>${topFiveShare.toFixed(1)} %</strong> del gasto del periodo.`);
+        if (categories.length) summary.push(`La categoría con más peso es <strong>${escapeHtml(categories[0].name)}</strong> con ${money(categories[0].total)} (${categories[0].share.toFixed(1)} %)${categories[1] ? `, seguida de <strong>${escapeHtml(categories[1].name)}</strong> con ${money(categories[1].total)}` : ''}.`);
+        if (peakMonth) summary.push(`El mes de mayor gasto fue <strong>${formatMonthLabel(peakMonth.key)}</strong> con ${money(peakMonth.total)} en ${peakMonth.count} pago${peakMonth.count === 1 ? '' : 's'}.`);
+        summary.push(`Por estado: <strong>${statuses.find(entry => entry.key === 'pagado').count} pagados</strong>, <strong>${statuses.find(entry => entry.key === 'pendiente').count} pendientes</strong> y <strong>${statuses.find(entry => entry.key === 'no_pagado').count} no pagados</strong>.`);
+        if (budgetExceeded.length) summary.push(`⚠ <strong>${budgetExceeded.length}</strong> categoría${budgetExceeded.length === 1 ? '' : 's'} supera${budgetExceeded.length === 1 ? '' : 'n'} su presupuesto mensual (promedio del periodo): ${budgetExceeded.map(entry => escapeHtml(entry.name)).join(', ')}.`);
+        else if (budgetWarn.length) summary.push(`👀 <strong>${budgetWarn.length}</strong> categoría${budgetWarn.length === 1 ? '' : 's'} está cerca del límite: ${budgetWarn.map(entry => escapeHtml(entry.name)).join(', ')}.`);
+        else if (categories.some(entry => entry.budget)) summary.push('Ninguna categoría se pasa de su presupuesto mensual dentro de este rango. ✔');
+        if (days) summary.push(`El rango abarca <strong>${days} día${days === 1 ? '' : 's'}</strong> y ${monthCount} mes${monthCount === 1 ? '' : 'es'}, con un promedio de <strong>${money(Math.round(aggregate.total / monthCount))}</strong> al mes.`);
+    }
+
+    return {
+        range, rangeLabel: reportRangeLabel(range), days, monthCount,
+        aggregate, previousAggregate, statuses, categories, months, top, maxMonth,
+        average, previousAverage, paidShare, pendingShare, deltas, summary,
+        meta: aggregate.count ? `${aggregate.count} pago${aggregate.count === 1 ? '' : 's'}${days ? ` · ${days} días` : ''}` : 'Sin pagos en el rango'
+    };
+}
+function categoriesList() { return categories; }
+function setReportDelta(id, delta) {
+    const element = $(id);
+    if (!element) return;
+    element.textContent = delta.text;
+    element.className = `report-delta ${delta.dir}`.trim();
+}
+function reportEmptyRow(columns, message) {
+    return `<tr><td colspan="${columns}" class="report-empty">${message}</td></tr>`;
+}
+function renderReports() {
+    const view = $('reportsView');
+    if (!view || view.classList.contains('hidden')) return;
+    const data = computeReports();
+    const aggregate = data.aggregate;
+
+    $('reportRangeLabel').textContent = data.rangeLabel;
+    $('reportMeta').textContent = data.meta;
+    $('reportMonthsMeta').textContent = `${data.months.length} mes${data.months.length === 1 ? '' : 'es'} en el rango`;
+    $('reportCategoriesMeta').textContent = `${data.categories.length} categoría${data.categories.length === 1 ? '' : 'ies'}`;
+    $('reportTopMeta').textContent = `Top ${Math.min(10, data.top.length)} de ${aggregate.count}`;
+
+    $('reportTotal').innerHTML = `${money(aggregate.total)} <small>COP</small>`;
+    $('reportPaid').textContent = money(aggregate.paid);
+    $('reportPending').textContent = money(aggregate.pending);
+    $('reportAverage').textContent = money(data.average);
+    setReportDelta('reportTotalDelta', data.deltas.total);
+    setReportDelta('reportPaidDelta', data.deltas.paid);
+    setReportDelta('reportPendingDelta', data.deltas.pending);
+    setReportDelta('reportAverageDelta', data.deltas.average);
+
+    $('reportSummary').innerHTML = data.summary.map(item => `<li>${item}</li>`).join('');
+
+    $('reportStatus').innerHTML = data.statuses.map(entry =>
+        `<tr><td>${entry.label}</td><td style="text-align:right">${entry.count}</td><td style="text-align:right;font-weight:800">${money(entry.total)}</td><td style="text-align:right">${entry.share.toFixed(1)} %</td><td style="text-align:right">${money(entry.average)}</td></tr>`
+    ).join('') + `<tr class="report-total-row"><td>Total</td><td style="text-align:right">${aggregate.count}</td><td style="text-align:right">${money(aggregate.total)}</td><td style="text-align:right">100 %</td><td style="text-align:right">${money(data.average)}</td></tr>`;
+
+    $('reportBars').innerHTML = data.months.length
+        ? data.months.map(month => `<div class="report-bar"><span class="report-bar-label">${escapeHtml(formatMonthLabel(month.key))}</span><div class="report-bar-track"><i style="width:${reportShare(month.total, data.maxMonth).toFixed(1)}%"></i></div><strong>${money(month.total)}</strong></div>`).join('')
+        : '<p class="report-note">Sin movimientos en el rango seleccionado.</p>';
+
+    $('reportMonths').innerHTML = data.months.length
+        ? data.months.map((month, index) => {
+            const previous = index > 0 ? data.months[index - 1].total : null;
+            const delta = reportDeltaText(month.total, previous, 'vs. mes anterior');
+            return `<tr><td>${escapeHtml(formatMonthLabel(month.key))}</td><td style="text-align:right">${month.count}</td><td style="text-align:right">${money(month.paid)}</td><td style="text-align:right">${money(month.pending)}</td><td style="text-align:right;font-weight:800">${money(month.total)}</td><td style="text-align:right"><span class="report-delta ${delta.dir}" style="float:none;margin:0">${delta.text}</span></td></tr>`;
+        }).join('')
+        : reportEmptyRow(6, 'No hay pagos en este rango.');
+
+    $('reportCategories').innerHTML = data.categories.length
+        ? data.categories.map(entry => {
+            const budgetCell = entry.budget
+                ? `<span class="budget-cell"><strong>${money(entry.budget)}/mes</strong><em class="is-${entry.budgetState.key}">${entry.budgetState.percent}%</em></span>`
+                : '<span class="budget-none">Sin presupuesto</span>';
+            return `<tr><td><span class="cat"><i class="dot" style="background:${entry.color}"></i>${escapeHtml(entry.name)}</span></td><td style="text-align:right">${entry.count}</td><td style="text-align:right;font-weight:800">${money(entry.total)}</td><td style="text-align:right">${entry.share.toFixed(1)} %</td><td>${budgetCell}</td></tr>`;
+        }).join('')
+        : reportEmptyRow(5, 'No hay pagos en este rango.');
+
+    $('reportTop').innerHTML = data.top.length
+        ? data.top.map((payment, index) => `<tr><td style="color:var(--muted)">${index + 1}</td><td>${escapeHtml(payment.name)}${payment.recurring ? '<span class="recurring-tag">↻ mensual</span>' : ''}</td><td><span class="cat"><i class="dot" style="background:${categoryColor(payment.category)}"></i>${escapeHtml(payment.category || 'Sin categoría')}</span></td><td class="date">${escapeHtml(payment.date)}</td><td style="text-align:right;font-weight:800">${money(payment.amount)}</td></tr>`).join('')
+        : reportEmptyRow(5, 'No hay pagos en este rango.');
+}
+function downloadCsv(filename, rows) {
+    const csv = rows.map(row => row.map(value => '"' + String(value ?? '').replaceAll('"', '""') + '"').join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type:'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+function exportReportCsv() {
+    const data = computeReports();
+    const aggregate = data.aggregate;
+    const rows = [['Seccion', 'Elemento', 'Pagos', 'Monto', 'Porcentaje', 'Detalle']];
+    const strip = text => String(text).replace(/<[^>]+>/g, '');
+    const push = (section, element, count, amount, share, detail) => rows.push([section, element, count ?? '', amount ?? '', share ?? '', detail ?? '']);
+
+    push('Periodo', data.rangeLabel, aggregate.count, aggregate.total, '', `${data.days || 'sin límite'} dias · ${data.monthCount} mes(es)`);
+    push('KPI', 'Gasto del periodo', '', aggregate.total, '', data.deltas.total.text);
+    push('KPI', 'Pagado', '', aggregate.paid, `${data.paidShare.toFixed(1)} %`, data.deltas.paid.text);
+    push('KPI', 'Pendiente', '', aggregate.pending, `${data.pendingShare.toFixed(1)} %`, data.deltas.pending.text);
+    push('KPI', 'Promedio por pago', '', data.average, '', data.deltas.average.text);
+    data.months.forEach(month => push('Mes', formatMonthLabel(month.key), month.count, month.total, `${reportShare(month.total, aggregate.total).toFixed(1)} %`, `Pagado ${month.paid} · Pendiente ${month.pending}`));
+    data.categories.forEach(entry => push('Categoria', entry.name, entry.count, entry.total, `${entry.share.toFixed(1)} %`, entry.budget ? `Presupuesto ${entry.budget}/mes${entry.budgetState ? ` (${entry.budgetState.label} ${entry.budgetState.percent}%)` : ''}` : 'Sin presupuesto'));
+    data.statuses.forEach(entry => push('Estado', entry.label, entry.count, entry.total, `${entry.share.toFixed(1)} %`, `Promedio ${entry.average}`));
+    data.top.forEach((payment, index) => push('Top', `${index + 1}. ${payment.name}`, '', payment.amount, '', `${payment.category || 'Sin categoria'} · ${payment.date}`));
+    data.summary.forEach(item => push('Resumen', strip(item)));
+
+    downloadCsv(`reporte-pagos-${formatDateKey(new Date())}.csv`, rows);
+}
+function setReportRange(preset) {
+    reportRange = Object.assign(reportPresetRange(preset), { preset });
+    $('reportFrom').value = reportRange.from;
+    $('reportTo').value = reportRange.to;
+    document.querySelectorAll('.report-presets .chip').forEach(chip => chip.classList.toggle('is-active', chip.dataset.range === preset));
+    renderReports();
 }
 function escapeHtml(text) { return String(text).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
 function populateMonths() {
@@ -1069,7 +1294,28 @@ $('addBtn').onclick = () => {
     openModal('paymentModal');
 };
 $('exportBtn').onclick = exportData;
-$('exportNav').onclick = exportData;
+$('reportsNav').onclick = () => {
+    showView('reportsView');
+    setActiveNav('reportsNav');
+    renderReports();
+};
+$('reportPrintBtn').onclick = () => window.print();
+$('reportCsvBtn').onclick = exportReportCsv;
+$('reportBackupBtn').onclick = exportData;
+$('reportFrom').onchange = event => {
+    reportRange = { from: event.target.value, to: reportRange.to, preset: 'custom' };
+    document.querySelectorAll('.report-presets .chip').forEach(chip => chip.classList.remove('is-active'));
+    renderReports();
+};
+$('reportTo').onchange = event => {
+    reportRange = { from: reportRange.from, to: event.target.value, preset: 'custom' };
+    document.querySelectorAll('.report-presets .chip').forEach(chip => chip.classList.remove('is-active'));
+    renderReports();
+};
+document.querySelectorAll('.report-presets .chip').forEach(chip => {
+    chip.onclick = () => setReportRange(chip.dataset.range);
+});
+setReportRange('quarter');
 $('importNav').onclick = () => openModal('importModal');
 $('importTemplateBtn').onclick = () => {
     const header = ['Concepto', 'Categoria', 'Fecha', 'Estado', 'Importe', 'Recurrente'];
@@ -1828,7 +2074,7 @@ function setActiveNav(buttonId) {
         button.classList.toggle('active', button.id === buttonId);
     });
 }
-const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'categoriesView'];
+const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'categoriesView', 'reportsView'];
 function showView(viewId) {
     APP_VIEWS.forEach(id => {
         const view = $(id);
