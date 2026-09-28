@@ -13,6 +13,8 @@
     --surface-alt:#e9f0e4;
     --row-line:#edf0eb;
     --nav:#687067;
+    --scroll-thumb:rgba(114,122,112,.42);
+    --scroll-thumb-hover:rgba(114,122,112,.72);
 }
 body.dark {
     --ink:#edf5ec;
@@ -24,6 +26,8 @@ body.dark {
     --surface-alt:#1a2a24;
     --row-line:#24372d;
     --nav:#dfece0;
+    --scroll-thumb:rgba(223,236,224,.3);
+    --scroll-thumb-hover:rgba(223,236,224,.55);
     background:#0e1512 !important;
     color:var(--ink);
 }
@@ -59,6 +63,14 @@ body.dark .month-select,
 body.dark .category,
 body.dark .report-line { border-color:var(--line); }
 * { box-sizing:border-box; }
+/* Scrollbars estilizados: tablas, paneles, modales y la propia página. */
+* { scrollbar-width:thin; scrollbar-color:var(--scroll-thumb) transparent; }
+*::-webkit-scrollbar { width:10px; height:10px; }
+*::-webkit-scrollbar-track { background:transparent; }
+*::-webkit-scrollbar-corner { background:transparent; }
+*::-webkit-scrollbar-thumb { background:var(--scroll-thumb); border:3px solid transparent; border-radius:999px; background-clip:padding-box; }
+*::-webkit-scrollbar-thumb:hover { background:var(--scroll-thumb-hover); background-clip:padding-box; }
+html:has(body.dark) { --scroll-thumb:rgba(223,236,224,.3); --scroll-thumb-hover:rgba(223,236,224,.55); }
 html { -webkit-text-size-adjust:100%; }
 img { max-width:100%; height:auto; }
 body { margin:0; color:var(--ink); background:#f3f4f1; font-family:Manrope,sans-serif; transition:background .25s,color .25s; overflow-x:hidden; }
@@ -217,8 +229,8 @@ h2 { margin:0; font-size:16px; letter-spacing:-.03em; }
 .color-field { display:grid; gap:8px; align-content:start; }
 .color-field-label { display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--muted); font:11px 'DM Mono',monospace; text-transform:uppercase; letter-spacing:.06em; }
 .color-field-label em { font-style:normal; color:var(--ink); font-weight:700; text-transform:none; letter-spacing:0; }
-.color-palette { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:9px; justify-items:center; padding:13px; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
-.color-swatch { position:relative; width:100%; max-width:32px; aspect-ratio:1; padding:0; border-radius:50%; border:2px solid rgba(120,132,118,.38); background:var(--swatch); transition:transform .15s, box-shadow .15s, opacity .15s; }
+.color-palette { display:grid; grid-template-columns:repeat(auto-fill,minmax(40px,1fr)); gap:9px; justify-items:center; padding:13px; border:1px solid var(--line); border-radius:10px; background:var(--paper); }
+.color-swatch { position:relative; width:100%; max-width:40px; aspect-ratio:1; padding:0; border-radius:50%; border:2px solid rgba(120,132,118,.38); background:var(--swatch); transition:transform .15s, box-shadow .15s, opacity .15s; }
 .color-swatch:hover { transform:scale(1.14); }
 .color-swatch.is-selected { transform:scale(1.1); box-shadow:0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
 .color-swatch.is-taken { opacity:.6; }
@@ -313,7 +325,11 @@ body.dark .notif-bell { background:var(--lime); color:#171c16; border-color:tran
 .filter-total strong { font-size:15px; }
 .filter-actions { display:grid; gap:8px; }
 #clearFiltersBtn { justify-content:center; width:100%; }
-.table-wrap { overflow:auto; }
+/* En pantallas pequeñas cada tabla crece dentro de su propio marco con scroll vertical
+   (más una cabecera fija), en vez de alargar la página. */
+.table-wrap { --table-bg:#f9faf8; overflow:auto; overscroll-behavior:contain; max-height:min(66vh,540px); scrollbar-width:thin; }
+body.dark .table-wrap { --table-bg:var(--white); }
+.table-wrap thead th { position:sticky; top:0; z-index:2; padding:6px 10px 10px; background:var(--table-bg); box-shadow:inset 0 -1px 0 var(--line); }
 table { width:100%; min-width:660px; border-collapse:collapse; font-size:13px; }
 th { color:var(--muted); text-align:left; padding:0 10px 12px; font:10px 'DM Mono'; text-transform:uppercase; letter-spacing:.08em; white-space:nowrap; }
 td { padding:13px 8px; border-top:1px solid var(--row-line); white-space:nowrap; }
@@ -380,7 +396,11 @@ tr:hover .row-actions { opacity:1; }
 .category:hover .category-delete { opacity:1; }
 .category-total { font:12px 'DM Mono'; color:var(--muted); }
 .empty { padding:28px 10px; text-align:center; color:var(--muted); font-size:13px; }
-.pagination { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
+.pagination { display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:10px; margin-top:18px; }
+.page-size-inline { grid-column:1 / -1; }
+#pageInfo { grid-column:1 / -1; grid-row:2; justify-self:center; padding:7px 13px; border:1px solid var(--line); border-radius:999px; background:var(--white); color:var(--ink); white-space:nowrap; }
+#prevPage { grid-column:1; grid-row:3; }
+#nextPage { grid-column:2; grid-row:3; }
 .pagination span { color:var(--muted); font:11px 'DM Mono'; }
 .modal-backdrop { display:none; position:fixed; inset:0; z-index:3; place-items:center; padding:12px; background:rgba(5,10,6,.58); }
 .modal-backdrop.open { display:grid; }
@@ -501,13 +521,13 @@ body.dark .auth-error { color:#ff9a86; }
     .breakdown-name, .breakdown-bar { grid-column:auto; }
     .breakdown-row strong { text-align:right; }
     .filters-row { grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr)); }
-    .color-palette { grid-template-columns:repeat(6,minmax(0,1fr)); }
-    .color-swatch { max-width:32px; }
+    .color-swatch { max-width:40px; }
     .table-wrap { margin:0; padding:0; }
     td { padding:15px 10px; }
     .chart { gap:clamp(8px,2vw,24px); }
     .bar-wrap span { font-size:10px; }
-    .pagination { justify-content:flex-end; }
+    .pagination { display:flex; flex-wrap:wrap; justify-content:flex-start; align-items:center; gap:12px; }
+    #prevPage { margin-left:auto; }
     .modal-backdrop { padding:20px; }
     .modal { padding:26px; }
     .modal-actions { flex-direction:row; }
@@ -550,7 +570,6 @@ body.dark .auth-error { color:#ff9a86; }
     .overview.balance-overview { grid-template-columns:repeat(4,minmax(0,1fr)); }
     .balance-overview .amount { font-size:26px; }
     .breakdown-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
-    .color-palette { grid-template-columns:repeat(10,minmax(0,1fr)); }
     .row-actions { opacity:0; padding:7px; min-width:34px; min-height:34px; border-radius:8px; }
     #clearBtn { min-height:34px; padding:9px 6px; border-radius:8px; margin:0; }
     .toggle-chart-btn { min-height:34px; padding:9px 12px; }
