@@ -19,6 +19,19 @@ Quick syntax check after editing JS:
 node --check assets/js/script.js
 ```
 
+Responsive audit (root of the repo, same server as the app):
+
+```bash
+python -m http.server 8000
+# open http://localhost:8000/responsive-test.html
+```
+
+`responsive-test.html` embeds the app in a same-origin iframe, lets you resize it to
+**320 / 375 / 414 / 600 / 768 / 834 / 1024 / 1280 / 1440 / 1920**, scales it to fit the window,
+and runs an audit per width: elements outside the viewport, `document.scrollWidth` and
+interactive targets under 38px (touch range). Hit **▶ medir todo** for the full sweep.
+The app authenticates inside the iframe, so the audit runs against the real, logged-in views.
+
 Docker build (must run from the **parent** directory — the Dockerfile copies `Gestión Pagos/`):
 
 ```bash
@@ -32,8 +45,9 @@ docker run --rm -p 8080:80 cartera-pagos
 - **Firebase via CDN**: compat libraries loaded from `gstatic.com` (v10.12.2) in `index.html`, plus `config/firebase-config.js`. Not installed via npm.
 - **localStorage-first**: payments, categories, theme, and page size persist in `localStorage`; Firestore acts as a per-user sync layer, not the primary store. On load, `hydrateLocalData()` runs first and Firestore fills in afterwards (`loadUserData()`).
 - **Auth**: Google sign-in only (the README mentions email/password but the UI only exposes Google). Without valid Firebase config the app falls back to a local "Modo local" session.
-- **Views**: `#summaryView`, `#simulatorView`, `#savingsView`, `#balanceView`, `#categoriesView` — toggled via the `hidden` class. `#authScreen` gates the whole `.app`. Nav buttons in the sidebar call `showView()` + `setActiveNav()`.
-- **Cache busting**: CSS/JS are loaded with a `?v=` query param (currently `?v=20260927-rec4`). **Bump it in `index.html` (3 places: stylesheet, script, favicon) on every ship** — otherwise users keep stale assets.
+- **Views**: `#summaryView`, `#simulatorView`, `#savingsView`, `#balanceView`, `#categoriesView` — toggled via the `hidden` class. `#authScreen` gates the whole `.app`. Nav buttons call `showView()` + `setActiveNav()`.
+- **Responsive (mobile-first)**: base CSS targets a 320px phone and the cascade scales up through `@media (min-width:600px / 768px / 1024px / 1440px / 1920px)` at the end of `style.css` (there are **no** `max-width` queries). **Below 1024px** the sidebar becomes a top bar with a hamburger button (`#navToggle`) that expands `#sideNav` vertically (`aside.nav-open`); the session/logout block (`.side-bottom`) lives inside that menu on mobile and in the sidebar from 1024px up. Above 1024px the layout is `grid-template-columns:250px minmax(0,1fr)` with a static sidebar.
+- **Cache busting**: CSS/JS are loaded with a `?v=` query param (currently `?v=20260927-mf3`). **Bump it in `index.html` (3 places: stylesheet, script, favicon) on every ship** — otherwise users keep stale assets.
 
 ### localStorage keys
 
@@ -74,4 +88,4 @@ docker run --rm -p 8080:80 cartera-pagos
 - Category colors are normalized to avoid duplicates; `persistCategories()` handles dedup and Firestore sync.
 - CSV files are the app's interchange format: keep the header `Concepto,Categoria,Fecha,Estado,Importe,Recurrente` in sync between `exportData()` and `importData()`.
 - No build step: avoid ES modules, imports, JSX/TS, or npm-only syntax. Use `node --check` to validate JS.
-- When changing UI, verify both themes (dark/light) and the mobile breakpoints at `900px`, `600px`, and `420px` in `style.css`.
+- When changing UI, verify both themes (dark/light) and every width with `responsive-test.html` (320, 375, 414, 600, 768, 1024, 1440, 1920): no horizontal overflow, no clipped text and targets ≥38px while below 1024px.

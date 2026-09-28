@@ -1704,14 +1704,23 @@ function simTourPosition() {
     const card = $('tourCard');
     const spotlight = $('tourSpotlight');
     const target = document.querySelector(step.target);
-    const cardWidth = Math.min(364, window.innerWidth - 28);
-    card.style.width = `${cardWidth}px`;
+    // En móvil la tarjeta es una hoja inferior anclada por CSS: no se posiciona con valores en línea.
+    const floating = window.innerWidth >= 600;
+    if (!floating) {
+        card.style.removeProperty('left');
+        card.style.removeProperty('top');
+        card.style.removeProperty('width');
+    }
     const rect = target ? target.getBoundingClientRect() : null;
     const visible = rect && rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight - 10 && rect.bottom > 10;
     if (!visible) {
         spotlight.classList.add('hidden');
-        card.style.left = `${Math.max(14, (window.innerWidth - cardWidth) / 2)}px`;
-        card.style.top = `${Math.max(14, (window.innerHeight - card.offsetHeight) / 2)}px`;
+        if (floating) {
+            const cardWidth = Math.min(364, window.innerWidth - 28);
+            card.style.width = `${cardWidth}px`;
+            card.style.left = `${Math.max(14, (window.innerWidth - cardWidth) / 2)}px`;
+            card.style.top = `${Math.max(14, (window.innerHeight - card.offsetHeight) / 2)}px`;
+        }
         return;
     }
     spotlight.classList.remove('hidden');
@@ -1719,6 +1728,9 @@ function simTourPosition() {
     spotlight.style.left = `${rect.left - 7}px`;
     spotlight.style.width = `${rect.width + 14}px`;
     spotlight.style.height = `${rect.height + 14}px`;
+    if (!floating) return;
+    const cardWidth = Math.min(364, window.innerWidth - 28);
+    card.style.width = `${cardWidth}px`;
     const cardHeight = card.offsetHeight;
     let top = rect.bottom + 16;
     if (top + cardHeight > window.innerHeight - 12) top = rect.top - cardHeight - 16;
@@ -1824,6 +1836,30 @@ function showView(viewId) {
     });
 }
 window.setActiveNav = setActiveNav;
+// Menú hamburguesa: en móvil/tablet la navegación se abre desde el botón del encabezado.
+const sideAside = document.querySelector('aside');
+const navToggle = $('navToggle');
+function setNavOpen(open) {
+    const isOpen = !!open && window.innerWidth < 1024;
+    sideAside.classList.toggle('nav-open', isOpen);
+    navToggle.setAttribute('aria-expanded', String(isOpen));
+    navToggle.setAttribute('aria-label', isOpen ? 'Cerrar menú' : 'Abrir menú');
+    navToggle.firstElementChild.textContent = isOpen ? '✕' : '☰';
+}
+navToggle.onclick = () => setNavOpen(!sideAside.classList.contains('nav-open'));
+$('sideNav').addEventListener('click', event => {
+    if (event.target.closest('button')) setNavOpen(false);
+});
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') setNavOpen(false);
+});
+document.addEventListener('click', event => {
+    if (!sideAside.classList.contains('nav-open')) return;
+    if (!event.target.closest('aside')) setNavOpen(false);
+});
+window.addEventListener('resize', () => {
+    if (window.innerWidth >= 1024) setNavOpen(false);
+});
 $('summaryNav').onclick = () => {
     showView('summaryView');
     setActiveNav('summaryNav');
