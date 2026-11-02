@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check JS
+        run: node --check "assets/js/script.js"
+      - name: Check for leftover debug statements
+        run: |
+          if grep -rn "console.log\|debugger" assets/ index.html; then
+            echo "Debug statements found"; exit 1;
+          fi
+          echo "OK"
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -f "Gestión Pagos/Dockerfile" -t cartera-pagos .

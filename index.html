@@ -2,46 +2,83 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20260927-mf9">
-    <link rel="stylesheet" href="assets/css/style.css?v=20260927-mf9">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20261102-responsive-fixes">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#c7f36b">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.gstatic.com https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com;">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="stylesheet" href="assets/css/style.css?v=20261102-responsive-fixes">
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Saltar al contenido</a>
 <section class="auth-screen" id="authScreen">
     <div class="auth-card">
         <div class="brand auth-brand"><span class="brand-mark"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><rect width="64" height="64" rx="16"/><path d="M32 13v38"/><path d="M42 25c0-4.4-4.5-7-10-7s-10 2.6-10 7 4.5 6 10 7 10 2.6 10 7-4.5 7-10 7-10-2.6-10-7"/><path class="accent" d="M47.5 16.5 56 8m0 0h-5.5M56 8v5.5"/></svg></span> cartera</div>
         <div class="eyebrow">Gestión personal</div>
         <h1>Inicia sesión</h1>
-        <p class="auth-copy">Continúa con Google para administrar tus pagos y categorías.</p>
-        <button class="btn btn-light google-submit" id="googleBtn" type="button"><span class="google-mark">G</span> Continuar con Google</button>
+        <p class="auth-copy">Continúa con Google o entra como invitado para probar la cartera.</p>
+        <div class="auth-actions">
+            <button class="btn btn-light google-submit" id="googleBtn" type="button"><span class="google-mark">G</span> Continuar con Google</button>
+            <button class="btn btn-dark" id="guestBtn" type="button">Acceder como invitado</button>
+        </div>
         <p class="auth-error" id="authError" role="alert"></p>
-        <p class="auth-note">Solo se admite acceso con Google para mantener tu cuenta segura.</p>
+        <p class="auth-note">Puedes usar Google o entrar como invitado para revisar la app sin crear una cuenta.</p>
     </div>
 </section>
 <div class="app">
     <aside>
         <div class="brand"><span class="brand-mark"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><rect width="64" height="64" rx="16"/><path d="M32 13v38"/><path d="M42 25c0-4.4-4.5-7-10-7s-10 2.6-10 7 4.5 6 10 7 10 2.6 10 7-4.5 7-10 7-10-2.6-10-7"/><path class="accent" d="M47.5 16.5 56 8m0 0h-5.5M56 8v5.5"/></svg></span> cartera<button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="sideNav" aria-label="Abrir menú"><span aria-hidden="true">☰</span></button></div>
         <div class="nav-label">Workspace</div>
-        <nav id="sideNav">
+        <nav id="sideNav" aria-label="Navegación principal">
             <button class="active" id="summaryNav"><span class="nav-icon">▦</span>Resumen</button>
             <button id="simulatorNav"><span class="nav-icon">◫</span>Simulador</button>
             <button id="savingsNav"><span class="nav-icon">$</span>Ahorro</button>
             <button id="balanceNav"><span class="nav-icon">▤</span>Balance</button>
+            <button id="incomeNav"><span class="nav-icon">↑</span>Ingresos</button>
             <button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button>
             <button id="reportsNav"><span class="nav-icon">▥</span>Reportes</button>
+            <button id="chartsNav"><span class="nav-icon">◑</span>Diagramas</button>
             <button id="importNav"><span class="nav-icon">↧</span>Importar datos</button>
             <input type="file" id="importFile" accept=".csv,text/csv" hidden>
+            <div class="nav-currency-wrap">
+                <label for="appCurrencySelect" class="nav-currency-label"><span class="nav-icon">¤</span>Moneda</label>
+                <select id="appCurrencySelect" class="nav-currency-select" aria-label="Moneda principal">
+                    <option value="COP">COP ($)</option>
+                    <option value="USD">USD (US$)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="MXN">MXN (Mex$)</option>
+                </select>
+            </div>
             <button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button>
         </nav>
-        <div class="side-bottom">Sesión activa: <strong id="activeUser"></strong><br><button class="logout-btn" id="logoutBtn" type="button">Cerrar sesión</button></div>
+        <div class="profile-card">
+            <button class="profile-button" id="profileButton" type="button" aria-expanded="false" aria-controls="profileMenu">
+                <span class="profile-avatar" id="profileAvatar">I</span>
+                <span class="profile-meta">
+                    <strong id="profileName">Invitado</strong>
+                    <small id="profileRole">Invitado</small>
+                </span>
+                <span class="profile-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="profile-menu hidden" id="profileMenu" role="menu" aria-label="Menú de perfil">
+                <button type="button" class="profile-menu-item" id="profileLogoutBtn">Cerrar sesión</button>
+            </div>
+        </div>
     </aside>
-    <main>
+    <main id="mainContent">
         <div id="summaryView">
         <header class="topbar"><div><div class="eyebrow" id="todayLabel">Resumen financiero</div><h1>Hola, aquí está tu mes.</h1><div class="eyebrow">Controla tus pagos sin perder el ritmo.</div></div><div class="actions"><button class="btn btn-light" id="exportBtn">↥ <span>Exportar</span></button><button class="btn btn-dark" id="addBtn">＋ <span>Nuevo pago</span></button></div></header>
-        <section class="overview"><article class="stat primary"><div class="stat-label">Gasto total del mes</div><div class="amount" id="monthTotal">$ 0 <small>COP</small></div><span class="delta" id="monthDelta">0 pagos</span></article><article class="stat"><div class="stat-label">Promedio diario</div><div class="amount" id="dailyAverage">$ 0</div></article><article class="stat"><div class="stat-label">Categoría principal</div><div class="amount" id="topCategory">—</div></article></section>
+        <div class="overview-header"><label class="month-picker" for="monthFilter"><span>Mes</span><select class="month-select" id="monthFilter" aria-label="Seleccionar mes"></select></label></div>
+        <section class="overview"><article class="stat primary"><div class="stat-head"><span class="stat-icon" aria-hidden="true">📉</span><div class="stat-label">Gasto total del mes</div></div><div class="amount" id="monthTotal">$ 0 <small>COP</small></div><span class="delta" id="monthDelta">0 pagos</span></article><article class="stat"><div class="stat-head"><span class="stat-icon" aria-hidden="true">📊</span><div class="stat-label">Promedio diario</div></div><div class="amount" id="dailyAverage">$ 0</div></article><article class="stat"><div class="stat-head"><span class="stat-icon" aria-hidden="true">🏆</span><div class="stat-label">Categoría principal</div></div><div class="amount" id="topCategory">—</div></article><article class="stat"><div class="stat-head"><span class="stat-icon" aria-hidden="true">💰</span><div class="stat-label">Ingresos del mes</div></div><div class="amount" id="monthIncome">$ 0</div></article></section>
         <section class="panel status-summary-panel"><div class="panel-head"><h2>Promedio por estado</h2><span class="eyebrow">Mes seleccionado</span></div><div class="table-wrap"><table class="status-summary-table"><thead><tr><th>Estado</th><th>Pagos</th><th style="text-align:right">Total</th><th style="text-align:right">Promedio por pago</th></tr></thead><tbody id="statusAverages"></tbody></table></div></section>
-        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2><select class="month-select" id="monthFilter"></select></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2><button class="btn btn-lime" id="manageBtn">＋ Gestionar</button></div><div class="category-toggle-row"><button type="button" class="toggle-chart-btn" id="toggleCategoryChart" aria-pressed="false">Mostrar pastel</button></div><div class="category-chart-panel hidden" id="categoryChartPanel"><div class="donut-chart" id="categoryChart"><div class="donut-center"><strong id="categoryChartTotal">$ 0</strong></div><div class="chart-tooltip" id="chartTooltip">Sin datos</div></div></div><div class="budget-banner hidden" id="budgetBanner" role="status"></div><div class="categories" id="categories"></div></section></div>
+        <div class="content-grid"><section class="panel"><div class="panel-head"><h2>Actividad mensual</h2></div><div class="chart" id="chart"></div></section><section class="panel"><div class="panel-head"><h2>Por categoría</h2></div><div class="category-chart-panel" id="categoryChartPanel"><div class="donut-chart" id="categoryChart" role="img" aria-label="Gasto por categoría"><div class="donut-center"><strong id="categoryChartTotal">$ 0</strong><em id="categoryChartLegendText">—</em></div><div class="chart-tooltip" id="chartTooltip">Sin datos</div></div><div class="donut-legend" id="categoryChartLegend"></div></div><div class="budget-banner hidden" id="budgetBanner" role="status"></div><div class="categories" id="categories"></div></section></div>
         <section class="panel" style="margin-top:16px">
             <div class="panel-head"><h2>Pagos recientes</h2><button class="eyebrow" id="clearBtn" style="background:none;color:var(--muted);cursor:pointer">Limpiar todo</button></div>
             <div class="filters-row">
@@ -49,13 +86,20 @@
                 <label>Hasta<input type="date" id="filterDateTo"></label>
                 <label>Categoría<select id="filterCategory"><option value="">Todas</option></select></label>
                 <label>Estado<select id="filterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
+                <label>Buscar<input type="search" id="paymentSearch" placeholder="Concepto o categoría" aria-label="Buscar pagos"></label>
                 <div class="filter-actions">
                     <div class="filter-total"><span>Total filtrado</span><strong id="selectedTotal">$ 0</strong></div>
                 </div>
             </div>
+            <div class="bulk-bar hidden" id="bulkBar">
+                <span id="bulkCount">0 seleccionados</span>
+                <button class="btn btn-dark" id="bulkMarkPaid" type="button">Marcar pagados</button>
+                <button class="btn btn-light" id="bulkDelete" type="button">Eliminar</button>
+                <button class="btn btn-light" id="bulkClearSel" type="button">Cancelar</button>
+            </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Importe</th><th></th></tr></thead>
+                    <thead><tr><th><input type="checkbox" id="selectAllPayments" aria-label="Seleccionar todos los pagos visibles"></th><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th>Estado</th><th style="text-align:right">Importe</th><th></th></tr></thead>
                     <tbody id="payments"></tbody>
                 </table>
                 <div class="empty hidden" id="emptyState">Todavía no hay pagos. Añade el primero para empezar.</div>
@@ -221,10 +265,14 @@
                     <button type="button" class="btn btn-dark" id="savingsNextBtn">Continuar →</button>
                 </div>
             </section>
+            <section class="panel" style="margin-top:16px">
+                <div class="panel-head"><h2>Metas de ahorro</h2><button class="btn btn-lime" id="addSavingsGoalBtn" type="button">＋ Nueva meta</button></div>
+                <div id="savingsGoalsList"></div>
+                <div class="empty hidden" id="savingsGoalsEmpty">Aún no tienes metas de ahorro. Añade la primera.</div>
+            </section>
         </section>
         <section class="balance-view hidden" id="balanceView">
-            <header class="topbar">
-                <div><div class="eyebrow">Balance general</div><h1>Todo lo que gastaste y pagaste.</h1><div class="eyebrow">Histórico completo de tus movimientos.</div></div>
+            <header class="topbar"><div><div class="eyebrow">Balance general</div><h1>Todo lo que gastaste y pagaste.</h1><div class="eyebrow">Histórico completo de tus movimientos.</div></div>
                 <div class="actions"><button class="btn btn-light" id="balanceExportBtn" type="button">↥ <span>Exportar</span></button></div>
             </header>
 
@@ -233,6 +281,7 @@
                 <article class="stat"><div class="stat-label">Pagado</div><div class="amount" id="balancePaid">$ 0</div></article>
                 <article class="stat"><div class="stat-label">Pendiente por pagar</div><div class="amount" id="balancePending">$ 0</div></article>
                 <article class="stat"><div class="stat-label">Promedio por pago</div><div class="amount" id="balanceAverage">$ 0</div></article>
+                <article class="stat"><div class="stat-label">Ingresos históricos</div><div class="amount" id="balanceIncome">$ 0</div></article>
             </section>
 
             <div class="content-grid balance-grid">
@@ -270,6 +319,33 @@
             </div>
         </section>
 
+        <section class="hidden" id="incomeView">
+            <header class="topbar">
+                <div>
+                    <div class="eyebrow">Ingresos</div>
+                    <h1>Tus ingresos registrados.</h1>
+                    <div class="eyebrow" id="incomeMeta">—</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-dark" id="addIncomeBtn" type="button">＋ <span>Nuevo ingreso</span></button>
+                </div>
+            </header>
+
+            <section class="overview">
+                <article class="stat primary"><div class="stat-label">Ingresos del mes</div><div class="amount" id="incomeMonthTotal">$ 0 <small>COP</small></div><span class="delta" id="incomeMonthCount">0 ingresos</span></article>
+                <article class="stat"><div class="stat-label">Ingresos recurrentes</div><div class="amount" id="incomeRecurringTotal">$ 0</div></article>
+                <article class="stat"><div class="stat-label">Promedio por ingreso</div><div class="amount" id="incomeAverage">$ 0</div></article>
+            </section>
+
+            <div class="table-wrap" style="margin-top:16px">
+                <table>
+                    <thead><tr><th>#</th><th>Concepto</th><th>Categoría</th><th>Fecha</th><th style="text-align:right">Importe</th><th></th></tr></thead>
+                    <tbody id="incomes"></tbody>
+                </table>
+                <div class="empty hidden" id="incomeEmpty">Aún no hay ingresos registrados.</div>
+            </div>
+        </section>
+
         <section class="categories-view hidden" id="categoriesView">
             <header class="topbar">
                 <div><div class="eyebrow">Organización</div><h1>Categorías</h1><div class="eyebrow">Crea, edita y ordena tus rubros.</div></div>
@@ -286,7 +362,8 @@
                     </div>
                     <div class="form-grid category-form-grid">
                         <label>Nombre<input name="name" required placeholder="Ej. Salud" maxlength="30"></label>
-                        <label>Presupuesto mensual<input name="budget" data-currency-input inputmode="numeric" placeholder="Sin presupuesto" title="Cuánto quieres gastar al mes en esta categoría (opcional)"></label>
+                        <label>Presupuesto mensual base<input name="budget" data-currency-input inputmode="numeric" placeholder="Sin presupuesto" title="Presupuesto mensual base predeterminado"></label>
+                        <label id="categoryFormMonthBudgetWrap">Presupuesto del mes seleccionado<input name="monthBudget" id="categoryFormMonthBudget" data-currency-input inputmode="numeric" placeholder="Mismo que el base" title="Ajuste específico para el mes seleccionado (opcional)"></label>
                         <div class="color-field">
                             <span class="color-field-label">Color <em id="colorFieldPick">#ff856c</em></span>
                             <input type="hidden" name="color" value="#ff856c">
@@ -305,6 +382,7 @@
 
                 <div class="panel-head categories-table-head">
                     <h2>Todas tus categorías</h2>
+                    <div class="category-month-filter"><label for="categoryBudgetMonthSelect" class="eyebrow">Mes de presupuesto:</label><select id="categoryBudgetMonthSelect" class="month-select" aria-label="Mes para ver presupuestos"></select></div>
                     <span class="eyebrow" id="categoriesCount">0 categorías</span>
                 </div>
                 <div class="table-wrap">
@@ -326,6 +404,7 @@
                 </div>
                 <div class="actions">
                     <button class="btn btn-light" type="button" id="reportPrintBtn">Imprimir / PDF</button>
+                    <button class="btn btn-light" type="button" id="reportPdfBtn">↓ PDF</button>
                     <button class="btn btn-light" type="button" id="reportCsvBtn">↓ <span>Informe CSV</span></button>
                     <button class="btn btn-light" type="button" id="reportBackupBtn">↓ <span>Copia completa</span></button>
                 </div>
@@ -342,6 +421,16 @@
                         <button type="button" class="chip" data-range="year">Este año</button>
                         <button type="button" class="chip" data-range="all">Todo</button>
                     </div>
+                </div>
+                <div class="report-filters-extended" id="reportFiltersExtended">
+                    <label>Categoría<select id="reportFilterCategory"><option value="">Todas</option></select></label>
+                    <label>Estado<select id="reportFilterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font:10px 'DM Mono';text-transform:uppercase;letter-spacing:.05em;"><input type="checkbox" id="reportFilterRecurring" style="width:16px;height:16px;margin:0;"> Solo recurrentes</label>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <label>Importe desde<input type="text" id="reportFilterAmountFrom" inputmode="numeric" data-currency-input placeholder="0"></label>
+                        <label>Importe hasta<input type="text" id="reportFilterAmountTo" inputmode="numeric" data-currency-input placeholder="0"></label>
+                    </div>
+                    <button type="button" class="btn btn-light" id="reportFilterClear">Limpiar filtros</button>
                 </div>
             </section>
             <br>
@@ -415,13 +504,141 @@
                     </table>
                 </div>
             </section>
+            <section class="panel">
+                <div class="panel-head"><h2>Distribución por estado</h2><span class="eyebrow">Reparto del total pagado</span></div>
+                <div class="report-distribution">
+                    <div class="report-distribution-donut">
+                        <div class="donut-chart" id="reportStatusDonut" role="img" aria-label="Distribución por estado de pago"></div>
+                        <div class="donut-legend" id="reportStatusLegend"></div>
+                    </div>
+                </div>
+            </section>
+            <section class="panel report-comparative">
+                <div class="panel-head"><h2>Mes actual vs. mes anterior</h2><span class="eyebrow">Comparativa de gasto</span></div>
+                <div class="report-comparative-row">
+                    <div class="report-comparative-col">
+                        <div class="stat"><div class="stat-label">Mes actual</div><div class="amount" id="reportCurrentMonthTotal">$ 0</div><span class="report-delta" id="reportCurrentMonthDelta">—</span></div>
+                    </div>
+                    <div class="report-comparative-col">
+                        <div class="stat"><div class="stat-label">Mes anterior</div><div class="amount" id="reportPreviousMonthTotal">$ 0</div><span class="report-delta" id="reportPreviousMonthDelta">—</span></div>
+                    </div>
+                </div>
+            </section>
+            <section class="panel report-recurring">
+                <div class="panel-head"><h2>Pagos recurrentes</h2><span class="eyebrow">Cargos que se repiten cada mes</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Concepto</th><th>Categoría</th><th style="text-align:right">Importe</th><th>Estado</th></tr></thead>
+                        <tbody id="reportRecurring"></tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+
+        <section class="hidden" id="chartsView">
+            <header class="topbar">
+                <div>
+                    <div class="eyebrow">Panel visual</div>
+                    <h1>Diagramas de tus pagos.</h1>
+                    <div class="eyebrow" id="chartsMeta">Últimos 6 meses</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-light" type="button" id="chartsPrintBtn">Imprimir / PDF</button>
+                    <button class="btn btn-light" type="button" id="chartsPdfBtn">↓ PDF</button>
+                    <button class="btn btn-light" type="button" id="chartsCsvBtn">↓ <span>Informe CSV</span></button>
+                    <button class="btn btn-light" type="button" id="chartsBackupBtn">↓ <span>Copia completa</span></button>
+                </div>
+            </header>
+
+            <section class="panel">
+                <div class="panel-head"><h2>Periodo y filtros</h2><span class="eyebrow" id="chartsFilterMeta">Se aplica a todos los diagramas</span></div>
+                <div class="filters-row charts-date-row">
+                    <label>Desde<input type="date" id="chartsFrom" aria-label="Fecha inicial del rango"></label>
+                    <label>Hasta<input type="date" id="chartsTo" aria-label="Fecha final del rango"></label>
+                </div>
+                <div class="charts-presets" role="group" aria-label="Periodo de los diagramas">
+                    <button type="button" class="chip" data-chart-range="month">Este mes</button>
+                    <button type="button" class="chip" data-chart-range="quarter">3 meses</button>
+                    <button type="button" class="chip is-active" data-chart-range="half">6 meses</button>
+                    <button type="button" class="chip" data-chart-range="year">Este año</button>
+                    <button type="button" class="chip" data-chart-range="all">Todo</button>
+                </div>
+                <div class="report-filters-extended charts-filters" id="chartsFilters">
+                    <label>Categoría<select id="chartsFilterCategory"><option value="">Todas</option></select></label>
+                    <label>Estado<select id="chartsFilterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
+                    <label class="charts-check"><input type="checkbox" id="chartsFilterRecurring"><span>Solo recurrentes</span></label>
+                    <div class="charts-amounts">
+                        <label>Importe desde<input type="text" id="chartsFilterAmountFrom" inputmode="numeric" data-currency-input placeholder="0"></label>
+                        <label>Importe hasta<input type="text" id="chartsFilterAmountTo" inputmode="numeric" data-currency-input placeholder="0"></label>
+                    </div>
+                    <button type="button" class="btn btn-light" id="chartsFilterClear">Limpiar filtros</button>
+                </div>
+            </section>
+
+            <section class="charts-grid">
+                <article class="panel chart-panel chart-panel-wide">
+                    <div class="panel-head"><h2>Evolución mensual</h2><span class="eyebrow" id="chartsEvolutionMeta">—</span></div>
+                    <div class="chart chart-evolution" id="chartsEvolution"></div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-head"><h2>Gasto por categoría</h2><span class="eyebrow">Participación</span></div>
+                    <div class="charts-donut">
+                        <div class="donut-chart" id="chartsCategoryDonut" role="img" aria-label="Gasto por categoría">
+                            <div class="donut-center"><strong id="chartsCategoryTotal">$ 0</strong><em>Total</em></div>
+                        </div>
+                        <div class="donut-legend" id="chartsCategoryLegend"></div>
+                    </div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-head"><h2>Estado de los pagos</h2><span class="eyebrow">Importe</span></div>
+                    <div class="charts-donut">
+                        <div class="donut-chart" id="chartsStatusDonut" role="img" aria-label="Distribución por estado">
+                            <div class="donut-center"><strong id="chartsStatusTotal">$ 0</strong><em>Total</em></div>
+                        </div>
+                        <div class="donut-legend" id="chartsStatusLegend"></div>
+                    </div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-head"><h2>Top categorías</h2><span class="eyebrow">Mayor gasto</span></div>
+                    <div class="report-bars" id="chartsTopCategories"></div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-head"><h2>Gasto por día de la semana</h2><span class="eyebrow">Distribución</span></div>
+                    <div class="report-bars" id="chartsWeekday"></div>
+                </article>
+
+                <article class="panel chart-panel">
+                    <div class="panel-head"><h2>Recurrentes vs. únicos</h2><span class="eyebrow">Importe</span></div>
+                    <div class="charts-donut">
+                        <div class="donut-chart" id="chartsRecurringDonut" role="img" aria-label="Recurrentes vs. únicos">
+                            <div class="donut-center"><strong id="chartsRecurringTotal">$ 0</strong><em>Total</em></div>
+                        </div>
+                        <div class="donut-legend" id="chartsRecurringLegend"></div>
+                    </div>
+                </article>
+
+                <article class="panel chart-panel chart-panel-wide">
+                    <div class="panel-head"><h2>Gasto acumulado del mes</h2><select class="month-select" id="chartsMonthSelect"></select></div>
+                    <div class="charts-accumulated" id="chartsAccumulated"></div>
+                    <p class="charts-note" id="chartsAccumulatedMeta">—</p>
+                </article>
+            </section>
         </section>
     </main>
 </div>
 <div class="modal-backdrop" id="importModal"><div class="modal import-modal"><h2>Importar pagos</h2><p class="import-lead">Sube un archivo <strong>CSV</strong> con tus pagos. El archivo que descargas desde “Exportar” ya cumple esta estructura, así que puedes volver a importarlo tal cual.</p><div class="import-spec"><span class="eyebrow">Estructura del archivo</span><div class="import-table-wrap"><table class="import-table"><thead><tr><th>Concepto</th><th>Categoria</th><th>Fecha</th><th>Estado</th><th>Importe</th><th>Recurrente</th></tr></thead><tbody><tr><td>Arriendo</td><td>Vivienda</td><td>2026-09-01</td><td>Pagado</td><td>900000</td><td>Sí</td></tr><tr><td>Mercado</td><td>Alimentos</td><td>05/09/2026</td><td>Pendiente</td><td>180.000</td><td>No</td></tr></tbody></table></div><ul class="import-notes"><li><strong>Concepto</strong>: texto libre. Es el único campo obligatorio junto con fecha e importe.</li><li><strong>Categoría</strong>: si no existe, se crea sola con un color libre.</li><li><strong>Fecha</strong>: <code>AAAA-MM-DD</code> o <code>DD/MM/AAAA</code>.</li><li><strong>Estado</strong>: Pagado, No pagado o Pendiente.</li><li><strong>Importe</strong>: números solos; acepta <code>180.000</code>.</li><li><strong>Recurrente</strong>: Sí o No. Las columnas pueden venir en otro orden si llevas cabecera.</li><li>Separador <code>,</code> o <code>;</code>, codificación UTF-8. Las filas vacías o repetidas se ignoran.</li></ul></div><div class="modal-actions"><button type="button" class="btn btn-light" id="importTemplateBtn">↓ <span>Descargar plantilla</span></button><button type="button" class="btn btn-light closeModal">Cancelar</button><button type="button" class="btn btn-dark" id="importPickBtn">Elegir archivo CSV</button></div></div></div>
-<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
+<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Moneda<select name="currency" id="paymentCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><div class="attachment-field"><label>Comprobante o recibo (opcional)<input type="file" id="paymentAttachment" accept="image/*,application/pdf"></label><div class="attachment-preview hidden" id="paymentAttachmentPreview"><span class="attachment-info" id="paymentAttachmentInfo"></span><button type="button" class="btn-remove-attachment" id="paymentAttachmentRemove">Quitar</button></div></div><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label>
+<label class="check-field" id="editSeriesField" style="display:none"><input type="checkbox" name="editSeries" value="1"><span>Actualizar toda la serie<em>Aplica los cambios a todos los pagos recurrentes con el mismo concepto.</em></span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
+
+<div class="modal-backdrop" id="incomeModal"><form class="modal" id="incomeForm"><h2>Registrar nuevo ingreso</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Salario"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Moneda<select name="currency" id="incomeCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="incomeCategorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes</span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar ingreso</button></div></form></div>
 
 <!-- Notificaciones de pagos -->
+<div class="modal-backdrop" id="savingsGoalModal"><form class="modal" id="savingsGoalForm"><h2>Nueva meta de ahorro</h2><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Fondo de emergencia"></label><label>Meta<input name="target" required type="text" inputmode="numeric" data-currency-input placeholder="5.000.000"></label><label>Ahorrado<input name="current" type="text" inputmode="numeric" data-currency-input placeholder="0"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar meta</button></div></form></div>
+<div class="modal-backdrop" id="receiptModal"><div class="modal receipt-modal"><div class="panel-head"><h2 id="receiptModalTitle">Comprobante de pago</h2><button type="button" class="closeModal" aria-label="Cerrar modal">✕</button></div><div class="receipt-preview-body" id="receiptPreviewBody"></div><div class="modal-actions"><a class="btn btn-light" id="receiptDownloadLink" download target="_blank" rel="noopener">Descargar</a><button type="button" class="btn btn-dark closeModal">Cerrar</button></div></div></div>
 <div class="notif-widget" id="notifWidget">
     <button type="button" class="notif-bell" id="notifBell" aria-haspopup="dialog" aria-expanded="false" aria-label="Notificaciones de pagos">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -432,6 +649,7 @@
             <div><div class="eyebrow">Alertas</div><h3>Pagos que requieren atención</h3></div>
             <button type="button" class="notif-close" id="notifClose" aria-label="Cerrar notificaciones">×</button>
         </div>
+        <div class="notif-push-banner" id="notifPushBanner"><div class="notif-push-text"><strong id="notifPushTitle">Notificaciones del sistema</strong><p id="notifPushDesc">Avisos antes de que venzan tus pagos.</p></div><button type="button" class="btn btn-light btn-sm" id="notifPushBtn">Activar</button></div>
         <div class="notif-filters" id="notifFilters">
             <button type="button" class="notif-chip is-active" data-notif-filter="atencion">Atención <span id="notifCountAtencion">0</span></button>
             <button type="button" class="notif-chip" data-notif-filter="sinpagar">Sin pagar <span id="notifCountPendientes">0</span></button>
@@ -473,6 +691,22 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/js/script.js?v=20260927-mf9"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script src="assets/js/script.js?v=20261102-responsive-fixes"></script>
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+<div class="save-indicator" id="saveIndicator">Guardando…</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+    });
+}
+</script>
 </body>
 </html>

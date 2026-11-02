@@ -8,12 +8,14 @@ Aplicación web estática para registrar y consultar pagos personales en pesos c
 - Consultar el gasto total y el promedio diario del mes.
 - Identificar la categoría con mayor gasto.
 - Visualizar la actividad mensual mediante un gráfico.
-- Filtrar la información por mes.
+- Filtrar la información por mes, categoría, estado, texto y rango de fechas.
 - Crear y eliminar categorías personalizadas.
-- Eliminar pagos individuales o todos los pagos.
-- Cambiar entre tema claro y oscuro.
-- Exportar los pagos a un archivo CSV compatible con hojas de cálculo.
-- Iniciar sesión, mantener la sesión activa y cerrar sesión.
+- Eliminar pagos individuales o todos los pagos, y acciones masivas (marcar pagados / eliminar seleccionados).
+- Cambiar entre tema claro y oscuro (y seguir la preferencia del sistema).
+- Exportar los pagos a CSV y los diagramas a CSV/PDF (impresión).
+- Sección "Diagramas" con evolución mensual, donuts por categoría/estado/recurrencia, top categorías y gasto acumulado, con filtros de fecha y avanzados.
+- Iniciar sesión con Google, mantener la sesión activa y cerrar sesión.
+- Funciona sin conexión (PWA) y guarda datos localmente sincronizando con Firestore.
 
 Todos los importes se muestran en pesos colombianos (COP).
 

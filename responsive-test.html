@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Prueba responsive — Gestion Pagos</title>
+<style>
+    * { box-sizing:border-box; }
+    body { margin:0; background:#15181a; color:#e8ece9; font:13px/1.5 system-ui,sans-serif; }
+    .bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:10px 12px; background:#1e2225; position:sticky; top:0; z-index:2; }
+    .bar strong { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#8d9a91; margin-right:6px; }
+    .bar button { padding:7px 11px; border:0; border-radius:7px; background:#2b3134; color:#e8ece9; font:600 12px system-ui,sans-serif; cursor:pointer; }
+    .bar button.on { background:#c7f36b; color:#171c16; }
+    #stage { display:flex; justify-content:center; padding:16px 12px; }
+    #frameBox { position:relative; overflow:hidden; border:1px solid #333a3d; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,.5); background:#fff; }
+    #frameWrap { position:absolute; top:0; left:0; transform-origin:top left; }
+    #tag { position:absolute; top:0; left:0; padding:3px 8px; background:rgba(199,243,107,.92); color:#171c16; font:700 11px system-ui,sans-serif; border-radius:0 0 8px 0; z-index:1; pointer-events:none; }
+    #f { display:block; border:0; background:#fff; }
+    #report { margin:0; padding:12px; background:#0f1113; color:#9fe870; font:11px/1.55 ui-monospace,Consolas,monospace; white-space:pre-wrap; border-top:1px solid #333a3d; }
+</style>
+</head>
+<body>
+<div class="bar" id="bar"><strong>Anchos</strong></div>
+<div id="stage">
+    <div id="frameBox"><div id="frameWrap"><span id="tag">375 px</span><iframe id="f" width="375" height="880"></iframe></div></div>
+</div>
+<pre id="report">cargando…</pre>
+<script>
+const WIDTHS = [320, 375, 414, 600, 768, 834, 1024, 1280, 1440, 1920];
+const FRAME_H = 880;
+const frame = document.getElementById('f');
+const frameWrap = document.getElementById('frameWrap');
+const frameBox = document.getElementById('frameBox');
+const tag = document.getElementById('tag');
+const report = document.getElementById('report');
+const bar = document.getElementById('bar');
+const results = {};
+
+function fit(width) {
+    const scale = Math.min(1, (window.innerWidth - 40) / width);
+    frameWrap.style.transform = 'scale(' + scale + ')';
+    frameBox.style.width = Math.round(width * scale) + 'px';
+    frameBox.style.height = Math.round(FRAME_H * scale) + 'px';
+    return scale;
+}
+
+const auditSource = `(() => {
+    const doc = document, win = window;
+    const vw = win.innerWidth;
+    const inScroller = el => {
+        for (let p = el.parentElement; p && p !== doc.body && p !== doc.documentElement; p = p.parentElement) {
+            const ox = win.getComputedStyle(p).overflowX;
+            if (ox === 'auto' || ox === 'scroll' || ox === 'hidden') return true;
+        }
+        return false;
+    };
+    const path = el => {
+        const bits = [];
+        for (let p = el; p && p !== doc.body && bits.length < 4; p = p.parentElement) {
+            let name = p.tagName.toLowerCase();
+            if (p.id) { bits.push(name + '#' + p.id); break; }
+            if (p.className && typeof p.className === 'string') name += '.' + p.className.trim().split(/\\s+/).slice(0, 3).join('.');
+            bits.push(name);
+        }
+        return bits.reverse().join(' > ');
+    };
+    const overflow = [], taps = [];
+    doc.querySelectorAll('*').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (!r.width && !r.height) return;
+        if (el === doc.body || el === doc.documentElement) return;
+        if (inScroller(el)) return;
+        if (r.right > vw + 1 || r.left < -1) {
+            overflow.push(path(el) + ' [' + Math.round(r.left) + '→' + Math.round(r.right) + ' w' + Math.round(r.width) + ']');
+        }
+    });
+    doc.querySelectorAll('button, a, input, select, [role=button]').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (!r.width || el.type === 'hidden' || el.closest('.hidden') || el.closest('[hidden]')) return;
+        if (r.height < 38 || r.width < 38) taps.push(path(el) + ' (' + Math.round(r.width) + '×' + Math.round(r.height) + ')');
+    });
+    return {
+        vw,
+        auth: !doc.getElementById('authScreen') || doc.getElementById('authScreen').classList.contains('hidden'),
+        docScroll: doc.documentElement.scrollWidth,
+        overflow: overflow.slice(0, 14),
+        overflowCount: overflow.length,
+        taps: Array.from(new Set(taps)).slice(0, 14),
+        tapCount: Array.from(new Set(taps)).length
+    };
+})()`;
+
+async function run(width) {
+    frame.width = width;
+    tag.textContent = width + ' px';
+    fit(width);
+    [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', Number(b.dataset.w) === width));
+    if (frame.contentWindow.location.href === 'about:blank' || !frame.contentDocument) {
+        frame.src = '/index.html?v=' + Date.now();
+        await new Promise(resolve => { frame.onload = resolve; });
+    }
+    await new Promise(r => setTimeout(r, 700));
+    let data;
+    try {
+        data = frame.contentWindow.eval(auditSource);
+    } catch (error) {
+        data = { error: String(error) };
+    }
+    results[width] = data;
+    draw(data, width);
+    return data;
+}
+
+function draw(d, width) {
+    if (!d || d.error) { report.textContent = 'ERROR: ' + (d && d.error); return; }
+    const lines = [];
+    lines.push('══ ' + width + 'px ════════════════════════════════════════');
+    lines.push('app autenticada: ' + (d.auth ? 'sí' : 'NO (pantalla de login)'));
+    lines.push('scrollWidth doc: ' + d.docScroll + (d.docScroll > d.vw + 1 ? '  ⚠ desborda' : '  ok'));
+    if (d.overflowCount) {
+        lines.push('⚠ ' + d.overflowCount + ' elementos fuera del ancho:');
+        d.overflow.forEach(o => lines.push('   · ' + o));
+    } else {
+        lines.push('sin elementos fuera del ancho ✓');
+    }
+    if (d.tapCount) {
+        lines.push('⚠ ' + d.tapCount + ' targets < 38px:');
+        d.taps.forEach(o => lines.push('   · ' + o));
+    } else {
+        lines.push('targets táctiles ok ✓');
+    }
+    report.textContent = lines.join('\n');
+    window.__lastReport = lines.join('\n');
+}
+
+WIDTHS.forEach(w => {
+    const b = document.createElement('button');
+    b.textContent = w;
+    b.dataset.w = w;
+    b.onclick = () => run(w);
+    bar.appendChild(b);
+});
+const runAll = document.createElement('button');
+runAll.textContent = '▶ medir todo';
+runAll.style.marginLeft = 'auto';
+runAll.onclick = async () => {
+    const summary = [];
+    for (const w of WIDTHS) {
+        const d = await run(w);
+        summary.push(w + ': auth=' + (d && d.auth) + ' overflow=' + (d && d.overflowCount) + ' taps=' + (d && d.tapCount) + ' scroll=' + (d && d.docScroll));
+    }
+    window.__summary = summary;
+    report.textContent = 'RESUMEN\n' + summary.join('\n') + '\n\n' + report.textContent;
+};
+bar.appendChild(runAll);
+window.addEventListener('resize', () => fit(Number(frame.width)));
+
+run(375);
+</script>
+</body>
+</html>

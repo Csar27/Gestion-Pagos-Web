@@ -1,0 +1,15 @@
+{
+  "name": "Cartera | Gestión de pagos",
+  "short_name": "Cartera",
+  "description": "Registro y consulta de pagos personales en pesos colombianos.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f6f2",
+  "theme_color": "#c7f36b",
+  "lang": "es-CO",
+  "icons": [
+    { "src": "assets/img/logo-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

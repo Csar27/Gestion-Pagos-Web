@@ -104,10 +104,75 @@ let categories = JSON.parse(localStorage.getItem('cartera_categories') || 'null'
 let payments = JSON.parse(localStorage.getItem('cartera_payments') || '[]');
 hydrateLocalData();
 persistCategories();
-let paymentFilters = { from:'', to:'', category:'', status:'', page:1, pageSize: Number(localStorage.getItem('cartera_page_size') || 5), focusId:null };
+let paymentFilters = { from:'', to:'', category:'', status:'', search:'', page:1, pageSize: Number(localStorage.getItem('cartera_page_size') || 5), focusId:null };
+const selectedPayments = new Set();
+let editingPaymentId = null;
+let incomes = [];
+try { incomes = JSON.parse(localStorage.getItem('cartera_incomes') || '[]'); } catch (e) { incomes = []; }
+let editingIncomeId = null;
+let savingsGoals = [];
+try { savingsGoals = JSON.parse(localStorage.getItem('cartera_savings_goals') || '[]'); } catch (e) { savingsGoals = []; }
 const PAGE_SIZE = paymentFilters.pageSize || 5;
 const $ = id => document.getElementById(id);
-const money = value => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(value);
+const SUPPORTED_CURRENCIES = {
+    COP: { code:'COP', symbol:'$', locale:'es-CO', decimals:0, label:'Peso colombiano (COP)', rateToCOP:1 },
+    USD: { code:'USD', symbol:'US$', locale:'en-US', decimals:2, label:'Dólar estadounidense (USD)', rateToCOP:4200 },
+    EUR: { code:'EUR', symbol:'€', locale:'es-ES', decimals:2, label:'Euro (EUR)', rateToCOP:4500 },
+    MXN: { code:'MXN', symbol:'Mex$', locale:'es-MX', decimals:2, label:'Peso mexicano (MXN)', rateToCOP:230 }
+};
+let appCurrency = localStorage.getItem('cartera_currency') || 'COP';
+
+function convertCurrency(amount, fromCur, toCur) {
+    const num = Number(amount) || 0;
+    const from = String(fromCur || 'COP').toUpperCase();
+    const to = String(toCur || appCurrency).toUpperCase();
+    if (from === to) return num;
+    const fromRate = (SUPPORTED_CURRENCIES[from] && SUPPORTED_CURRENCIES[from].rateToCOP) || 1;
+    const toRate = (SUPPORTED_CURRENCIES[to] && SUPPORTED_CURRENCIES[to].rateToCOP) || 1;
+    return (num * fromRate) / toRate;
+}
+
+const money = (value, currencyCode) => {
+    const cur = String(currencyCode || appCurrency || 'COP').toUpperCase();
+    const info = SUPPORTED_CURRENCIES[cur] || SUPPORTED_CURRENCIES.COP;
+    const num = Number(value) || 0;
+    try {
+        return new Intl.NumberFormat(info.locale, {
+            style: 'currency',
+            currency: info.code,
+            maximumFractionDigits: info.decimals,
+            minimumFractionDigits: info.decimals > 0 ? 2 : 0
+        }).format(num);
+    } catch (e) {
+        return `${info.symbol} ${num.toFixed(info.decimals)}`;
+    }
+};
+const compactMoney = (value, currencyCode) => {
+    const cur = String(currencyCode || appCurrency || 'COP').toUpperCase();
+    const info = SUPPORTED_CURRENCIES[cur] || SUPPORTED_CURRENCIES.COP;
+    const numeric = Number(value) || 0;
+    if (numeric >= 1e6) return `${info.symbol} ${new Intl.NumberFormat(info.locale, { maximumFractionDigits: 1 }).format(numeric / 1e6)} M`;
+    if (numeric >= 1e3) return `${info.symbol} ${new Intl.NumberFormat(info.locale, { maximumFractionDigits: 0 }).format(numeric / 1e3)} k`;
+    return money(numeric, cur);
+};
+let storage = null;
+let fcmMessaging = null;
+let syncStatus = 'synced'; // 'synced' | 'syncing' | 'offline' | 'conflict'
+let firestoreUnsubscribers = [];
+let lastSyncTimestamp = localStorage.getItem('cartera_last_sync') || new Date().toISOString();
+let selectedBudgetMonth = new Date().toISOString().slice(0, 7);
+let selectedAttachmentFile = null;
+
+function getCategoryBudget(category, monthKey) {
+    if (!category) return 0;
+    const m = monthKey || selectedBudgetMonth || currentMonth();
+    if (category.monthlyBudgets && category.monthlyBudgets[m] !== undefined && category.monthlyBudgets[m] !== null && category.monthlyBudgets[m] !== '') {
+        return Number(category.monthlyBudgets[m]) || 0;
+    }
+    return Number(category.budget) || 0;
+}
+
+
 const formatMoneyInput = value => {
     const digitsOnly = String(value ?? '').replace(/[^\d]/g, '');
     if (!digitsOnly) return '';
@@ -117,31 +182,114 @@ const formatMoneyInput = value => {
 };
 const parseMoneyInput = value => Number(String(value ?? '').replace(/\./g, '').replace(/,/g, '').replace(/[^\d-]/g, '')) || 0;
 const authScreen = $('authScreen'), app = document.querySelector('.app');
-const firebaseReady = !!(window.firebaseConfig && !Object.values(window.firebaseConfig).some(value => String(value).startsWith('TU_')));
+const firebaseReady = !!(window.firebaseConfig && !Object.values(window.firebaseConfig).some(value => String(value).startsWith('TU_'))) && location.protocol !== 'file:';
+const guestUser = { email:'Invitado', uid:'guest-user', displayName:'Invitado', isGuest:true };
+function isGuestSession(user = currentUser) {
+    return !!user && (user.isGuest || user.uid === 'guest-user' || String(user.email || '').toLowerCase() === 'invitado');
+}
+function isLocalOnlySession(user = currentUser) {
+    if (!user) return true;
+    return isGuestSession(user) || String(user.email || '').startsWith('Modo local');
+}
 let auth, db, currentUser, loadedUid = '';
 if (typeof firebase !== 'undefined' && firebaseReady) {
     firebase.initializeApp(window.firebaseConfig);
     auth = firebase.auth(); db = firebase.firestore();
+    try { db.enablePersistence({ synchronizeTabs:true }).catch(() => {}); } catch (e) {}
+    if (firebase.storage) {
+        try { storage = firebase.storage(); } catch (e) { console.warn('Storage no inicializado:', e); }
+    }
+    if (firebase.messaging && typeof firebase.messaging.isSupported === 'function' && firebase.messaging.isSupported()) {
+        try { fcmMessaging = firebase.messaging(); } catch (e) { console.warn('FCM no soportado en este navegador:', e); }
+    }
     auth.onAuthStateChanged(user => {
         if (user) {
             loadUserData(user).catch(error => { console.error(error); showAuth(); firebaseError(error); });
+        } else if (localStorage.getItem('cartera_guest_session') === '1') {
+            currentUser = { ...guestUser };
+            showApp(currentUser);
+            updateSyncStatusUI('offline', 'Modo invitado');
         } else {
             currentUser = null; categories = []; payments = []; showAuth();
         }
     });
     auth.getRedirectResult().then(result => {
         if (result.user) return loadUserData(result.user);
-        if (!auth.currentUser) showAuth();
+        if (!auth.currentUser && localStorage.getItem('cartera_guest_session') !== '1') showAuth();
     }).catch(error => { showAuth(); firebaseError(error); });
 } else {
     currentUser = { email: 'Modo local' };
-    showApp(currentUser);
+    if (localStorage.getItem('cartera_guest_session') === '1') {
+        currentUser = { ...guestUser };
+        showApp(currentUser);
+    } else {
+        showApp(currentUser);
+    }
     if (!window.firebaseConfig) {
         $('authError').textContent = 'Configura Firebase para habilitar Google.';
+    } else if (location.protocol === 'file:') {
+        $('authError').textContent = 'Abre la app con un servidor local (python -m http.server 8000) para usar Google. En modo archivo se usa sesión local.';
     }
+    // Semilla de ejemplo solo si no hay pagos guardados, para que los gráficos se vean con datos
+    if (!payments || payments.length === 0) {
+        const hoy = new Date().toISOString().slice(0,10);
+        const mes = hoy.slice(0,7);
+        const ejemplo = [
+            { name:'Arriendo', category:'Vivienda', date:`${mes}-01`, status:'pagado', amount:900000, recurring:true },
+            { name:'Mercado', category:'Alimentos', date:`${mes}-05`, status:'pagado', amount:180000 },
+            { name:'Mercado', category:'Alimentos', date:`${mes}-12`, status:'pendiente', amount:120000 },
+            { name:'Transporte', category:'Transporte', date:`${mes}-08`, status:'pagado', amount:45000 },
+            { name:'Internet', category:'Servicios', date:`${mes}-10`, status:'no_pagado', amount:79900 },
+            { name:'Ocio', category:'Ocio', date:`${mes}-15`, status:'pendiente', amount:60000 },
+        ];
+        payments = ejemplo.map((p, i) => ({ id:`local-${i+1}`, ...p }));
+        localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    }
+    render();
+    renderReports();
+    renderCharts();
+    populateMonths();
+    syncRecurringPayments();
 }
-function showApp(user) { authScreen.classList.add('hidden'); app.classList.add('authenticated'); $('activeUser').textContent = user.email || 'Cuenta de Google'; }
-function showAuth() { app.classList.remove('authenticated'); authScreen.classList.remove('hidden'); }
+function getUserDisplayName(user) {
+    if (!user) return 'Invitado';
+    if (user.displayName) return user.displayName.trim();
+    if (user.email) return user.email.split('@')[0];
+    return 'Cuenta de Google';
+}
+function getUserInitials(user) {
+    const name = getUserDisplayName(user).trim();
+    if (!name) return 'I';
+    const parts = name.split(/\s+/).slice(0, 2);
+    const initials = parts.map(part => part.charAt(0).toUpperCase()).join('');
+    return initials || 'I';
+}
+function updateProfileUI(user) {
+    const name = getUserDisplayName(user);
+    const initials = getUserInitials(user);
+    const profileName = $('profileName');
+    const activeUser = $('activeUser');
+    const avatar = $('profileAvatar');
+    const role = $('profileRole');
+    if (profileName) profileName.textContent = name;
+    if (activeUser) activeUser.textContent = name;
+    if (avatar) avatar.textContent = initials.slice(0, 2);
+    if (role) role.textContent = user?.isGuest ? 'Invitado' : (user?.email || 'Usuario');
+}
+function showApp(user) {
+    authScreen.classList.add('hidden');
+    app.classList.add('authenticated');
+    updateProfileUI(user);
+}
+function showAuth() {
+    app.classList.remove('authenticated');
+    authScreen.classList.remove('hidden');
+    if ($('profileName')) $('profileName').textContent = 'Invitado';
+    if ($('profileRole')) $('profileRole').textContent = 'Invitado';
+    if ($('profileAvatar')) $('profileAvatar').textContent = 'I';
+    const menu = $('profileMenu');
+    if (menu) menu.classList.add('hidden');
+}
 function firebaseError(error) {
     const messages = {'auth/email-already-in-use':'Este correo ya está registrado.','auth/invalid-credential':'Correo o contraseña incorrectos.','auth/popup-closed-by-user':'Ventana de Google cerrada.','auth/popup-blocked':'El navegador bloqueó la ventana. Intenta otra vez.','auth/unauthorized-domain':'Agrega este dominio en Firebase > Authentication > Settings > Authorized domains.','auth/operation-not-allowed':'Activa Google en Firebase > Authentication > Sign-in method.','auth/weak-password':'La contraseña debe tener al menos 6 caracteres.','permission-denied':'Firebase rechazó el acceso a Firestore. Revisa las reglas de seguridad.','failed-precondition':'Debes crear la base de datos de Firestore.'};
     $('authError').textContent = messages[error.code] || `Firebase: ${error.message || 'no fue posible iniciar sesión.'}`;
@@ -150,19 +298,75 @@ async function loadUserData(user) {
     if (loadedUid === user.uid) return;
     loadedUid = user.uid;
     currentUser = user;
-    const userRef = db.collection('users').doc(user.uid), snapshot = await userRef.collection('categories').get();
-    categories = snapshot.empty ? defaultCategories.map(category => ({...category})) : snapshot.docs.map(doc => ({id:doc.id, ...doc.data()}));
-    const paymentsSnapshot = await userRef.collection('payments').get();
-    payments = paymentsSnapshot.docs.map(doc => ({id:doc.id, ...doc.data(), status:getPaymentStatus(doc.data())}));
-    await Promise.all(paymentsSnapshot.docs.filter(doc => !PAYMENT_STATUSES.includes(doc.data().status)).map(doc => doc.ref.update({ status:'pagado' })));
-    localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    updateSyncStatusUI('syncing', 'Sincronizando...');
+    const userRef = db.collection('users').doc(user.uid);
+    const snapshot = await userRef.collection('categories').get();
+    const remoteCategories = snapshot.empty ? defaultCategories.map(category => ({...category})) : snapshot.docs.map(doc => ({id:doc.id, ...doc.data()}));
+    
+    // Categorias: reconciliar
+    categories = remoteCategories;
     persistCategories();
     if (snapshot.empty) {
         categories = await Promise.all(categories.map(async category => {
-            const ref = await userRef.collection('categories').add(category);
+            const ref = await userRef.collection('categories').add({ ...category, updatedAt: new Date().toISOString() });
             return {...category, id:ref.id};
         }));
     }
+
+    // Pagos: reconciliacion bidireccional
+    const paymentsSnapshot = await userRef.collection('payments').get();
+    const remotePayments = paymentsSnapshot.docs.map(doc => ({id:doc.id, ...doc.data(), status:getPaymentStatus(doc.data())}));
+    const localPayments = JSON.parse(localStorage.getItem('cartera_payments') || '[]');
+    const mergedMap = new Map();
+    remotePayments.forEach(rp => mergedMap.set(rp.id, rp));
+
+    // Si habia pagos creados offline con local-*, subirlos a Firestore
+    for (const lp of localPayments) {
+        if (String(lp.id).startsWith('local-')) {
+            const exists = remotePayments.some(rp => rp.name === lp.name && rp.date === lp.date && Number(rp.amount) === Number(lp.amount));
+            if (!exists) {
+                try {
+                    const toUpload = { ...lp, updatedAt: new Date().toISOString() };
+                    delete toUpload._dirty;
+                    const ref = await userRef.collection('payments').add(toUpload);
+                    mergedMap.set(ref.id, { ...toUpload, id: ref.id });
+                } catch (e) {
+                    mergedMap.set(lp.id, lp);
+                }
+            }
+        } else if (lp._dirty && mergedMap.has(lp.id)) {
+            // Conflicto local vs remoto
+            const remoteDoc = mergedMap.get(lp.id);
+            const { merged, conflict, pushRemote } = mergeRecords(lp, remoteDoc);
+            mergedMap.set(lp.id, merged);
+            if (pushRemote) userRef.collection('payments').doc(lp.id).set(merged).catch(() => {});
+            if (conflict) showToast('Se sincronizaron cambios concurrentes.', 'info');
+        }
+    }
+    payments = Array.from(mergedMap.values());
+    localStorage.setItem('cartera_payments', JSON.stringify(payments));
+
+    // Ingresos: reconciliacion
+    const incomesSnapshot = await userRef.collection('incomes').get().catch(() => ({ empty: true, docs: [] }));
+    const remoteIncomes = incomesSnapshot.empty ? [] : incomesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const localIncomes = JSON.parse(localStorage.getItem('cartera_incomes') || '[]');
+    const incomesMap = new Map();
+    remoteIncomes.forEach(ri => incomesMap.set(ri.id, ri));
+    for (const li of localIncomes) {
+        if (String(li.id).startsWith('local-')) {
+            const exists = remoteIncomes.some(ri => ri.name === li.name && ri.date === li.date && Number(ri.amount) === Number(li.amount));
+            if (!exists) {
+                try {
+                    const toUpload = { ...li, updatedAt: new Date().toISOString() };
+                    const ref = await userRef.collection('incomes').add(toUpload);
+                    incomesMap.set(ref.id, { ...toUpload, id: ref.id });
+                } catch (e) { incomesMap.set(li.id, li); }
+            }
+        }
+    }
+    incomes = Array.from(incomesMap.values());
+    localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+
     populateMonths();
     const defaultMonth = new Date().toISOString().slice(0,7);
     $('monthFilter').value = defaultMonth;
@@ -170,6 +374,10 @@ async function loadUserData(user) {
     render();
     showApp(user);
     syncRecurringPayments();
+    startRealtimeSync(user);
+    registerFcmToken();
+    checkAndNotifyDuePayments();
+    updateSyncStatusUI('synced', 'Sincronizado');
 }
 $('googleBtn').onclick = async () => {
     if (!firebaseReady || typeof firebase === 'undefined' || !firebase.auth) {
@@ -196,13 +404,62 @@ $('googleBtn').onclick = async () => {
         $('googleBtn').disabled = false; $('googleBtn').textContent = 'Continuar con Google'; firebaseError(error);
     }
 };
-$('logoutBtn').onclick = async () => {
-    if (!auth) return;
-    $('logoutBtn').disabled = true;
-    try { await auth.signOut(); }
-    catch (error) { $('authError').textContent = `No fue posible cerrar sesión: ${error.message}`; }
-    finally { $('logoutBtn').disabled = false; }
+$('guestBtn').onclick = () => {
+    localStorage.setItem('cartera_guest_session', '1');
+    currentUser = { ...guestUser };
+    $('authError').textContent = '';
+    showApp(currentUser);
+    updateSyncStatusUI('offline', 'Modo invitado');
 };
+async function disconnectSession() {
+    if (currentUser && currentUser.isGuest) {
+        localStorage.removeItem('cartera_guest_session');
+        currentUser = null;
+        showAuth();
+        $('authError').textContent = 'Sesión de invitado cerrada.';
+        return;
+    }
+    if (!auth) {
+        localStorage.removeItem('cartera_guest_session');
+        currentUser = null;
+        showAuth();
+        return;
+    }
+    const logoutBtn = $('logoutBtn');
+    if (logoutBtn) logoutBtn.disabled = true;
+    try {
+        await auth.signOut();
+        localStorage.removeItem('cartera_guest_session');
+    }
+    catch (error) {
+        $('authError').textContent = `No fue posible cerrar sesión: ${error.message}`;
+    }
+    finally {
+        if (logoutBtn) logoutBtn.disabled = false;
+        currentUser = null;
+        showAuth();
+    }
+}
+const logoutBtn = $('logoutBtn');
+if (logoutBtn) logoutBtn.onclick = disconnectSession;
+$('profileLogoutBtn').onclick = disconnectSession;
+const profileButton = $('profileButton');
+const profileMenu = $('profileMenu');
+if (profileButton) {
+    profileButton.onclick = () => {
+        if (!profileMenu) return;
+        const shouldOpen = profileMenu.classList.toggle('hidden');
+        profileButton.setAttribute('aria-expanded', String(!shouldOpen));
+    };
+}
+document.addEventListener('click', (event) => {
+    if (!profileMenu || !profileButton) return;
+    const isInside = profileButton.contains(event.target) || profileMenu.contains(event.target);
+    if (!isInside) {
+        profileMenu.classList.add('hidden');
+        profileButton.setAttribute('aria-expanded', 'false');
+    }
+});
 const currentMonth = () => $('monthFilter').value || new Date().toISOString().slice(0,7);
 function getFilteredPayments() {
     return payments.slice().filter(payment => {
@@ -210,6 +467,10 @@ function getFilteredPayments() {
         if (paymentFilters.to && payment.date > paymentFilters.to) return false;
         if (paymentFilters.category && payment.category !== paymentFilters.category) return false;
         if (paymentFilters.status && getPaymentStatus(payment) !== paymentFilters.status) return false;
+        if (paymentFilters.search) {
+            const haystack = `${payment.name || ''} ${payment.category || ''}`.toLowerCase();
+            if (!haystack.includes(paymentFilters.search.toLowerCase())) return false;
+        }
         return true;
     }).sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -221,6 +482,16 @@ function syncFilterCategoryOptions() {
     } else {
         paymentFilters.category = '';
         $('filterCategory').value = '';
+    }
+    const reportCatSelect = $('reportFilterCategory');
+    if (reportCatSelect) {
+        reportCatSelect.innerHTML = `<option value="">Todas</option>${categories.map(category => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join('')}`;
+        if (reportFiltersExtended.category && categories.some(category => category.name === reportFiltersExtended.category)) {
+            reportCatSelect.value = reportFiltersExtended.category;
+        } else {
+            reportFiltersExtended.category = '';
+            reportCatSelect.value = '';
+        }
     }
 }
 function renderRecentPayments() {
@@ -251,29 +522,47 @@ function renderRecentPayments() {
 
     $('payments').innerHTML = paginatedRows.map((payment, index) => {
         const rowNumber = (paymentFilters.page - 1) * (Number(paymentFilters.pageSize) || PAGE_SIZE) + index + 1;
+        const checked = selectedPayments.has(payment.id) ? 'checked' : '';
         return `
         <tr data-row-id="${escapeHtml(payment.id)}">
+            <td><input type="checkbox" class="row-select" data-select-id="${escapeHtml(payment.id)}" ${checked} aria-label="Seleccionar ${escapeHtml(payment.name)}"></td>
             <td style="font-weight:700; color:var(--muted);">${rowNumber}</td>
             <td>${escapeHtml(payment.name)}${payment.recurring ? '<span class="recurring-tag" title="Pago recurrente: se repite cada mes">↻ mensual</span>' : ''}</td>
             <td><span class="cat"><i class="dot" style="background:${(categories.find(category => category.name === payment.category) || {}).color || '#aaa'}"></i>${escapeHtml(payment.category)}</span></td>
             <td class="date">${new Date(payment.date + 'T12:00:00').toLocaleDateString('es-CO',{day:'2-digit',month:'short',year:'numeric'})}</td>
             <td><select class="payment-status" data-status-id="${escapeHtml(payment.id)}" aria-label="Estado de ${escapeHtml(payment.name)}"><option value="pagado" ${getPaymentStatus(payment) === 'pagado' ? 'selected' : ''}>Pagado</option><option value="no_pagado" ${getPaymentStatus(payment) === 'no_pagado' ? 'selected' : ''}>No pagado</option><option value="pendiente" ${getPaymentStatus(payment) === 'pendiente' ? 'selected' : ''}>Pendiente</option></select></td>
-            <td style="text-align:right;font-weight:800">${money(payment.amount)}</td>
-            <td><button class="row-actions" data-delete="${payment.id}" title="Eliminar">×</button></td>
+            <td style="text-align:right;font-weight:800">${money(payment.amount, payment.currency || appCurrency)}${payment.currency && payment.currency !== appCurrency ? `<br><small style="font-size:10px;color:var(--muted);font-weight:500">≈ ${money(convertCurrency(payment.amount, payment.currency, appCurrency), appCurrency)}</small>` : ''}</td>
+            <td>${payment.attachment ? `<button type="button" class="row-actions receipt-btn" data-view-receipt="${escapeHtml(payment.id)}" title="Ver comprobante (${escapeHtml(payment.attachment.name)})">📎</button>` : ''}<button class="row-actions" data-edit-payment="${escapeHtml(payment.id)}" title="Editar">✎</button> <button class="row-actions" data-delete="${payment.id}" title="Eliminar">×</button></td>
         </tr>
     `;
     }).join('');
     $('emptyState').classList.add('hidden');
     $('payments').parentElement.classList.remove('hidden');
 
+    updateBulkBar();
+
     if (document.getElementById('simulatorIncome')) {
         updateSimulator();
+    }
+}
+function updateBulkBar() {
+    const bar = $('bulkBar');
+    const countEl = $('bulkCount');
+    if (!bar || !countEl) return;
+    const n = selectedPayments.size;
+    countEl.textContent = `${n} seleccionado${n === 1 ? '' : 's'}`;
+    bar.classList.toggle('hidden', n === 0);
+    const selectAll = $('selectAllPayments');
+    if (selectAll) {
+        const visibleIds = [...document.querySelectorAll('.row-select')].map(cb => cb.dataset.selectId);
+        selectAll.checked = visibleIds.length > 0 && visibleIds.every(id => selectedPayments.has(id));
+        selectAll.indeterminate = visibleIds.some(id => selectedPayments.has(id)) && !selectAll.checked;
     }
 }
 function buildPaymentsAggregate(list) {
     const aggregate = { count: 0, total: 0, paid: 0, pending: 0, byCategory: new Map(), byMonth: new Map(), byStatus: new Map() };
     list.forEach(payment => {
-        const amount = Number(payment.amount || 0);
+        const amount = convertCurrency(payment.amount, payment.currency, appCurrency);
         const status = getPaymentStatus(payment);
         const isPaid = status === 'pagado';
         const dateKey = String(payment.date || '').slice(0, 7);
@@ -323,8 +612,9 @@ function categoryBudgetState(spent, budget) {
 function renderBudgetBanner(byMonthSpend) {
     const banner = $('budgetBanner');
     if (!banner) return;
+    const month = currentMonth();
     const flagged = categories
-        .map(category => ({ name: category.name, state: categoryBudgetState(byMonthSpend[category.name] || 0, category.budget) }))
+        .map(category => ({ name: category.name, state: categoryBudgetState(byMonthSpend[category.name] || 0, getCategoryBudget(category, month)) }))
         .filter(entry => entry.state && entry.state.key !== 'ok');
     const exceeded = flagged.filter(entry => entry.state.key === 'exceeded');
     const warn = flagged.filter(entry => entry.state.key === 'warn');
@@ -347,13 +637,19 @@ function render() {
     const byCat = {};
     let total = 0;
     filtered.forEach(payment => {
-        total += Number(payment.amount);
-        byCat[payment.category] = (byCat[payment.category] || 0) + Number(payment.amount);
+        const converted = convertCurrency(payment.amount, payment.currency, appCurrency);
+        total += converted;
+        byCat[payment.category] = (byCat[payment.category] || 0) + converted;
     });
 
-    $('monthTotal').innerHTML = `${money(total)} <small>COP</small>`;
+    $('monthTotal').innerHTML = `${money(total, appCurrency)} <small id="currencyBadge">${appCurrency}</small>`;
     $('monthDelta').textContent = `${filtered.length} pago${filtered.length === 1 ? '' : 's'}`;
-    $('dailyAverage').textContent = money(total / new Date(Number(month.split('-')[0]), Number(month.split('-')[1]), 0).getDate());
+    const monthIncomeEl = $('monthIncome');
+    if (monthIncomeEl) {
+        const monthIncomeTotal = incomes.filter(i => String(i.date || '').startsWith(month)).reduce((s, i) => s + convertCurrency(i.amount, i.currency, appCurrency), 0);
+        monthIncomeEl.textContent = money(monthIncomeTotal, appCurrency);
+    }
+    $('dailyAverage').textContent = money(total / new Date(Number(month.split('-')[0]), Number(month.split('-')[1]), 0).getDate(), appCurrency);
 
     const statusBuckets = {};
     filtered.forEach(payment => {
@@ -372,8 +668,9 @@ function render() {
     $('topCategory').textContent = top ? top[0] : '—';
     $('categories').innerHTML = categories.map(category => {
         const spent = byCat[category.name] || 0;
-        const state = categoryBudgetState(spent, category.budget);
-        const budgetBlock = state ? `<div class="category-budget"><div class="category-budget-track"><i class="is-${state.key}" style="width:${Math.min(100, state.percent)}%"></i></div><span class="category-budget-copy is-${state.key}">${state.percent}% · ${money(spent)} de ${money(category.budget)}</span></div>` : '';
+        const catBudget = getCategoryBudget(category, month);
+        const state = categoryBudgetState(spent, catBudget);
+        const budgetBlock = state ? `<div class="category-budget"><div class="category-budget-track"><i class="is-${state.key}" style="width:${Math.min(100, state.percent)}%"></i></div><span class="category-budget-copy is-${state.key}">${state.percent}% · ${money(spent)} de ${money(catBudget)}</span></div>` : '';
         return `<div class="category"><div class="category-info"><i class="dot" style="background:${escapeHtml(category.color)}"></i>${escapeHtml(category.name)}</div><div class="category-total">${money(spent)}</div>${budgetBlock}</div>`;
     }).join('');
     renderBudgetBanner(byCat);
@@ -383,32 +680,37 @@ function render() {
     const categoryChartTotal = $('categoryChartTotal');
     const chartTooltip = $('chartTooltip');
     const categoryChartPanel = $('categoryChartPanel');
+    const categoryChartLegend = $('categoryChartLegend');
+    const categoryChartLegendText = $('categoryChartLegendText');
     if (categoryChart && categoryChartTotal) {
         const categoryValues = categories.map(category => ({ name: category.name, color: category.color, value: byCat[category.name] || 0 })).filter(item => item.value > 0);
         const chartTotal = categoryValues.reduce((sum, item) => sum + item.value, 0);
         categoryChartTotal.textContent = chartTotal > 0 ? money(chartTotal) : '$ 0';
+        if (categoryChartLegendText) categoryChartLegendText.textContent = chartTotal > 0 ? 'Total gastado' : 'Sin datos';
         categoryChart.dataset.values = JSON.stringify(categoryValues);
+        categoryChart.setAttribute('aria-label', chartTotal > 0 ? `Gasto por categoría: ${money(chartTotal)}` : 'Gasto por categoría: sin datos');
         if (chartTotal > 0) {
             let current = 0;
-            const gradient = categoryValues.map(({ color, value }) => {
+            categoryChart.style.background = `conic-gradient(${categoryValues.map(({ color, value }) => {
                 const start = current;
                 const end = current + (value / chartTotal) * 360;
                 current = end;
                 return `${color} ${start}deg ${end}deg`;
-            }).join(', ');
-            categoryChart.style.background = `conic-gradient(${gradient})`;
+            }).join(', ')})`;
+            if (categoryChartLegend) {
+                categoryChartLegend.innerHTML = categoryValues.map(({ name, color, value }) => {
+                    const pct = chartTotal > 0 ? (value / chartTotal) * 100 : 0;
+                    return `<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${escapeHtml(color)}"></span><span class="donut-legend-label">${escapeHtml(name)}</span><span class="donut-legend-value">${money(value)} · ${pct.toFixed(0)}%</span></div>`;
+                }).join('');
+            }
         } else {
             categoryChart.style.background = 'conic-gradient(#dfe4dc 0deg 360deg)';
             if (chartTooltip) chartTooltip.textContent = 'Sin datos';
+            if (categoryChartLegend) categoryChartLegend.innerHTML = '<div class="donut-empty">Sin datos para mostrar</div>';
         }
     }
-    if (categoryChartPanel && $('toggleCategoryChart')) {
-        const toggleButton = $('toggleCategoryChart');
-        toggleButton.onclick = () => {
-            const isHidden = categoryChartPanel.classList.toggle('hidden');
-            toggleButton.textContent = isHidden ? 'Mostrar pastel' : 'Ocultar pastel';
-            toggleButton.setAttribute('aria-pressed', String(!isHidden));
-        };
+    if (categoryChartPanel) {
+        categoryChartPanel.classList.remove('hidden');
     }
     if (categoryChart) {
         categoryChart.onmousemove = event => {
@@ -434,7 +736,7 @@ function render() {
             if (!match && values.length) match = values[values.length - 1];
             if (chartTooltip && match) {
                 const pct = (match.value / total) * 100;
-                chartTooltip.textContent = `${match.name}: ${money(match.value)} (${pct.toFixed(0)}%)`;
+                chartTooltip.textContent = `${match.name}: ${money(match.value)} (${pct.toFixed(1)}%)`;
             }
         };
         categoryChart.onmouseleave = () => {
@@ -442,6 +744,7 @@ function render() {
         };
     }
 
+    const hasMonthData = filtered.length > 0;
     const buckets = Array.from({ length: 6 }, () => 0);
     filtered.forEach(payment => {
         const day = new Date(payment.date).getDate();
@@ -450,12 +753,30 @@ function render() {
         buckets[index] += Number(payment.amount);
     });
     const max = Math.max(...buckets, 1);
-    $('chart').innerHTML = buckets.map((value, index) => `<div class="bar-wrap"><div class="bar ${index === 5 ? 'current' : ''}" style="height:${Math.max(4, value / max * 130)}px" title="${money(value)}"></div><span>${index * 5 + 1}-${Math.min(index * 5 + 5, 31)}</span></div>`).join('');
+    const bucketTotal = buckets.reduce((sum, value) => sum + value, 0);
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const today = todayISO.startsWith(month) ? Number(todayISO.slice(8, 10)) : null;
+    if (!hasMonthData) {
+        $('chart').innerHTML = '<div class="chart-empty">Sin pagos este mes</div>';
+    } else {
+        $('chart').innerHTML = buckets.map((value, index) => {
+            const dayStart = index * 5 + 1;
+            const dayEnd = Math.min(dayStart + 4, 31);
+            const isCurrent = today !== null && dayStart <= today && today <= dayEnd;
+            const heightPx = value === 0 ? 8 : Math.max(value / max * 140, 8);
+            const pct = bucketTotal > 0 ? Math.round(value / bucketTotal * 100) : 0;
+            const valueLabel = value > 0 ? `<div class="bar-value"><span class="bar-value-amount">${compactMoney(value)}</span><span class="bar-value-pct">${pct}%</span></div>` : '';
+            return `<div class="bar-wrap" role="img" aria-label="${dayStart}–${dayEnd}: ${money(value)}">${valueLabel}<div class="bar ${isCurrent ? 'current' : ''}${value === 0 ? ' is-zero' : ''}" style="height:${heightPx}px" title="${money(value)}"></div><span>${dayStart}–${dayEnd}</span></div>`;
+        }).join('');
+    }
     syncFilterCategoryOptions();
     renderRecentPayments();
     renderBalance(aggregates);
     renderNotifications();
     renderReports();
+    renderCharts();
+    renderIncomes();
+    renderSavingsGoals();
     if (document.getElementById('simulatorIncome')) {
         updateSimulator();
     }
@@ -463,19 +784,26 @@ function render() {
 function renderCategoryTable(aggregates) {
     const categoryList = $('categoryList');
     if (!categoryList) return;
+
+    const monthSelect = $('categoryBudgetMonthSelect');
+    if (monthSelect) {
+        const availableMonths = [...new Set([selectedBudgetMonth, currentMonth(), ...payments.map(p => String(p.date || '').slice(0, 7))])].filter(Boolean).sort().reverse();
+        monthSelect.innerHTML = availableMonths.map(m => `<option value="${m}" ${m === selectedBudgetMonth ? 'selected' : ''}>${formatMonthLabel(m)}</option>`).join('');
+    }
+
     const totals = aggregates ? aggregates.byCategory : new Map();
     categoryList.innerHTML = categories.map(category => {
         const stats = totals.get(category.name) || { count: 0, total: 0 };
         const color = escapeHtml(category.color);
-        const budget = Number(category.budget) || 0;
+        const budget = getCategoryBudget(category, selectedBudgetMonth);
+        const hasMonthOverride = category.monthlyBudgets && category.monthlyBudgets[selectedBudgetMonth] !== undefined && category.monthlyBudgets[selectedBudgetMonth] !== null;
         let budgetCell = '<span class="budget-none">—</span>';
         if (budget > 0) {
-            const monthKey = currentMonth();
             const monthSpent = payments
-                .filter(payment => payment.category === category.name && String(payment.date || '').startsWith(monthKey))
-                .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+                .filter(payment => payment.category === category.name && String(payment.date || '').startsWith(selectedBudgetMonth))
+                .reduce((sum, payment) => sum + convertCurrency(payment.amount, payment.currency, appCurrency), 0);
             const state = categoryBudgetState(monthSpent, budget);
-            budgetCell = `<span class="budget-cell"><strong>${money(budget)}</strong><em class="is-${state.key}">${state.percent}%</em></span>`;
+            budgetCell = `<span class="budget-cell"><strong>${money(budget)}</strong>${hasMonthOverride ? '<span class="category-budget-badge" title="Presupuesto específico de este mes">mes</span>' : ''}<em class="is-${state.key}">${state.percent}%</em></span>`;
         }
         return `<tr class="category-row" data-category-id="${escapeHtml(category.id)}">
             <td><span class="category-info"><i class="dot" style="background:${color}"></i><span class="category-name">${escapeHtml(category.name)}</span></span></td>
@@ -503,6 +831,8 @@ function renderBalance(aggregates) {
     $('balancePaid').textContent = money(data.paid);
     $('balancePending').textContent = money(data.pending);
     $('balanceAverage').textContent = money(data.count ? data.total / data.count : 0);
+    const incomeEl = $('balanceIncome');
+    if (incomeEl) incomeEl.textContent = money(incomes.reduce((sum, i) => sum + Number(i.amount || 0), 0));
 
     const months = [...data.byMonth.values()].sort((a, b) => b.key.localeCompare(a.key));
     $('balanceMonths').innerHTML = months.map(entry => `<tr><td>${escapeHtml(formatMonthLabel(entry.key))}</td><td style="text-align:right">${entry.count}</td><td style="text-align:right">${money(entry.paid)}</td><td style="text-align:right">${money(entry.pending)}</td><td style="text-align:right;font-weight:800">${money(entry.total)}</td></tr>`).join('');
@@ -521,8 +851,94 @@ function renderBalance(aggregates) {
         return `<tr><td>${paymentStatusLabel(status)}</td><td style="text-align:right">${entry.count}</td><td style="text-align:right;font-weight:800">${money(entry.total)}</td><td style="text-align:right">${share.toFixed(1)} %</td></tr>`;
     }).join('');
 }
-// ---------- Reportes ----------
+function renderIncomes() {
+    const list = $('incomes');
+    if (!list) return;
+    const total = incomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const recurring = incomes.filter(i => i.recurring).reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const monthKey = new Date().toISOString().slice(0, 7);
+    const monthTotal = incomes.filter(i => String(i.date || '').startsWith(monthKey)).reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const monthCount = incomes.filter(i => String(i.date || '').startsWith(monthKey)).length;
+    if ($('incomeMonthTotal')) $('incomeMonthTotal').innerHTML = `${money(monthTotal)} <small>COP</small>`;
+    if ($('incomeMonthCount')) $('incomeMonthCount').textContent = `${monthCount} ingreso${monthCount === 1 ? '' : 's'}`;
+    if ($('incomeRecurringTotal')) $('incomeRecurringTotal').textContent = money(recurring);
+    if ($('incomeAverage')) $('incomeAverage').textContent = money(incomes.length ? total / incomes.length : 0);
+    if ($('incomeMeta')) $('incomeMeta').textContent = `${incomes.length} ingreso${incomes.length === 1 ? '' : 's'} · Total ${money(total)}`;
+    list.innerHTML = incomes.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map((income, index) => `
+        <tr>
+            <td style="font-weight:700; color:var(--muted);">${index + 1}</td>
+            <td>${escapeHtml(income.name)}${income.recurring ? '<span class="recurring-tag">↻ mensual</span>' : ''}</td>
+            <td><span class="cat"><i class="dot" style="background:${escapeHtml(categoryColor(income.category))}"></i>${escapeHtml(income.category || 'Sin categoría')}</span></td>
+            <td class="date">${new Date(income.date + 'T12:00:00').toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' })}</td>
+            <td style="text-align:right;font-weight:800">${money(income.amount)}</td>
+            <td><button class="row-actions" data-edit-income="${escapeHtml(income.id)}" title="Editar">✎</button> <button class="row-actions" data-delete-income="${escapeHtml(income.id)}" title="Eliminar">×</button></td>
+        </tr>
+    `).join('');
+    const empty = $('incomeEmpty');
+    if (empty) empty.classList.toggle('hidden', incomes.length > 0);
+    if (incomes.length === 0 && list.parentElement) list.parentElement.classList.add('hidden');
+    else if (list.parentElement) list.parentElement.classList.remove('hidden');
+}
+function persistIncomes() {
+    localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+    const collection = userCollection('incomes');
+    if (!collection) return;
+    // sync: upsert all (simple)
+    incomes.forEach(income => {
+        if (String(income.id).startsWith('local-')) return;
+        collection.doc(income.id).set(income).catch(() => {});
+    });
+}
+function persistSavingsGoals() {
+    localStorage.setItem('cartera_savings_goals', JSON.stringify(savingsGoals));
+}
+function renderSavingsGoals() {
+    const list = $('savingsGoalsList');
+    if (!list) return;
+    if (savingsGoals.length === 0) {
+        list.innerHTML = '';
+        $('savingsGoalsEmpty')?.classList.remove('hidden');
+        return;
+    }
+    $('savingsGoalsEmpty')?.classList.add('hidden');
+    list.innerHTML = savingsGoals.map(goal => {
+        const target = Number(goal.target || 0);
+        const current = Number(goal.current || 0);
+        const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+        return `<div class="savings-goal">
+            <div class="savings-goal-head">
+                <strong>${escapeHtml(goal.name)}</strong>
+                <button class="row-actions" data-delete-goal="${escapeHtml(goal.id)}" title="Eliminar">×</button>
+            </div>
+            <div class="savings-goal-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+            <div class="savings-goal-meta">
+                <span>${money(current)} de ${money(target)}</span>
+                <span>${pct.toFixed(0)}%</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+const debouncedSave = (key, value) => {
+    if (window.__saveTimers) clearTimeout(window.__saveTimers[key]);
+    else window.__saveTimers = {};
+    window.__saveTimers[key] = setTimeout(() => {
+        try { localStorage.setItem(key, value); } catch (e) { /* ignore */ }
+        const indicator = $('saveIndicator');
+        if (indicator) {
+            indicator.classList.add('is-visible');
+            setTimeout(() => indicator.classList.remove('is-visible'), 1200);
+        }
+    }, 300);
+};
 let reportRange = { from:'', to:'', preset:'quarter' };
+let reportFiltersExtended = { category:'', status:'', recurring:false, amountFrom:'', amountTo:'' };
+// ---------- Diagramas ----------
+let chartsRange = 'half';
+let chartsDateFrom = '';
+let chartsDateTo = '';
+let chartsMonth = new Date().toISOString().slice(0, 7);
+let chartsFilters = { category:'', status:'', recurring:false, amountFrom:'', amountTo:'' };
+const CHART_STATUS_COLORS = { pagado:'#7bab3a', no_pagado:'#e04a2f', pendiente:'#efa13c' };
 
 function reportPresetRange(preset) {
     const today = new Date();
@@ -568,7 +984,17 @@ function reportDeltaText(current, previous, reference) {
 }
 function computeReports() {
     const range = { from: reportRange.from, to: reportRange.to };
-    const list = payments.filter(payment => (!range.from || payment.date >= range.from) && (!range.to || payment.date <= range.to));
+    const list = payments.filter(payment => {
+        if (range.from && payment.date < range.from) return false;
+        if (range.to && payment.date > range.to) return false;
+        if (reportFiltersExtended.category && payment.category !== reportFiltersExtended.category) return false;
+        if (reportFiltersExtended.status && getPaymentStatus(payment) !== reportFiltersExtended.status) return false;
+        if (reportFiltersExtended.recurring && !payment.recurring) return false;
+        const amount = Number(payment.amount || 0);
+        if (reportFiltersExtended.amountFrom && amount < reportFiltersExtended.amountFrom) return false;
+        if (reportFiltersExtended.amountTo && amount > reportFiltersExtended.amountTo) return false;
+        return true;
+    });
     const aggregate = buildPaymentsAggregate(list);
     const previousRange = reportPreviousRange(range);
     const previousList = previousRange ? payments.filter(payment => payment.date >= previousRange.from && payment.date <= previousRange.to) : [];
@@ -608,6 +1034,20 @@ function computeReports() {
     const budgetWarn = categories.filter(entry => entry.budgetState && entry.budgetState.key === 'warn');
     const topFiveShare = reportShare(top.slice(0, 5).reduce((sum, payment) => sum + Number(payment.amount || 0), 0), aggregate.total);
 
+    const recurringList = list.filter(payment => payment.recurring);
+    const recurringTotal = recurringList.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const statusDistribution = PAYMENT_STATUSES.map(key => {
+        const entry = aggregate.byStatus.get(key) || { count: 0, total: 0 };
+        return { key, label: paymentStatusLabel(key), count: entry.count, total: entry.total, share: reportShare(entry.total, aggregate.total) };
+    });
+    const currentDate = new Date();
+    const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    const prevDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    const previousMonthKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+    const currentMonthTotal = aggregate.byMonth.get(currentMonthKey) || { key: currentMonthKey, count: 0, total: 0 };
+    const previousMonthTotal = aggregate.byMonth.get(previousMonthKey) || { key: previousMonthKey, count: 0, total: 0 };
+    const monthDelta = previousMonthTotal.total ? reportDeltaText(currentMonthTotal.total, previousMonthTotal.total, 'vs. mes anterior') : { text: 'sin mes anterior', dir: '' };
+
     const hasPrevious = Boolean(previousAggregate && previousAggregate.count);
     const deltas = {
         total: reportDeltaText(aggregate.total, hasPrevious ? previousAggregate.total : null, 'vs. periodo anterior'),
@@ -644,6 +1084,8 @@ function computeReports() {
         range, rangeLabel: reportRangeLabel(range), days, monthCount,
         aggregate, previousAggregate, statuses, categories, months, top, maxMonth,
         average, previousAverage, paidShare, pendingShare, deltas, summary,
+        recurringList, recurringTotal, statusDistribution,
+        currentMonthTotal, previousMonthTotal, monthDelta,
         meta: aggregate.count ? `${aggregate.count} pago${aggregate.count === 1 ? '' : 's'}${days ? ` · ${days} días` : ''}` : 'Sin pagos en el rango'
     };
 }
@@ -686,7 +1128,7 @@ function renderReports() {
 
     $('reportBars').innerHTML = data.months.length
         ? data.months.map(month => `<div class="report-bar"><span class="report-bar-label">${escapeHtml(formatMonthLabel(month.key))}</span><div class="report-bar-track"><i style="width:${reportShare(month.total, data.maxMonth).toFixed(1)}%"></i></div><strong>${money(month.total)}</strong></div>`).join('')
-        : '<p class="report-note">Sin movimientos en el rango seleccionado.</p>';
+        : '<div class="report-bar-zero">Sin movimientos en el rango seleccionado.</div>';
 
     $('reportMonths').innerHTML = data.months.length
         ? data.months.map((month, index) => {
@@ -708,9 +1150,376 @@ function renderReports() {
     $('reportTop').innerHTML = data.top.length
         ? data.top.map((payment, index) => `<tr><td style="color:var(--muted)">${index + 1}</td><td>${escapeHtml(payment.name)}${payment.recurring ? '<span class="recurring-tag">↻ mensual</span>' : ''}</td><td><span class="cat"><i class="dot" style="background:${categoryColor(payment.category)}"></i>${escapeHtml(payment.category || 'Sin categoría')}</span></td><td class="date">${escapeHtml(payment.date)}</td><td style="text-align:right;font-weight:800">${money(payment.amount)}</td></tr>`).join('')
         : reportEmptyRow(5, 'No hay pagos en este rango.');
+
+    // Distribución por estado (donut)
+    const reportStatusDonut = $('reportStatusDonut');
+    const reportStatusLegend = $('reportStatusLegend');
+    if (reportStatusDonut && reportStatusLegend) {
+        const distValues = data.statusDistribution.filter(entry => entry.total > 0);
+        const distTotal = distValues.reduce((sum, entry) => sum + entry.total, 0);
+        const statusColors = { pagado: '#7bab3a', no_pagado: '#e04a2f', pendiente: '#efa13c' };
+        if (distTotal > 0) {
+            let current = 0;
+            reportStatusDonut.style.background = `conic-gradient(${distValues.map(entry => {
+                const color = statusColors[entry.key] || '#dfe4dc';
+                const start = current;
+                const end = current + (entry.total / distTotal) * 360;
+                current = end;
+                return `${color} ${start}deg ${end}deg`;
+            }).join(', ')})`;
+            reportStatusDonut.setAttribute('aria-label', `Distribución por estado: ${money(distTotal)}`);
+            reportStatusLegend.innerHTML = distValues.map(entry => {
+                const color = statusColors[entry.key] || '#dfe4dc';
+                const pct = (entry.total / distTotal) * 100;
+                return `<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${escapeHtml(color)}"></span><span class="donut-legend-label">${escapeHtml(entry.label)}</span><span class="donut-legend-value">${money(entry.total)} · ${pct.toFixed(0)}%</span></div>`;
+            }).join('');
+        } else {
+            reportStatusDonut.style.background = 'conic-gradient(#dfe4dc 0deg 360deg)';
+            reportStatusDonut.setAttribute('aria-label', 'Distribución por estado: sin datos');
+            reportStatusLegend.innerHTML = '<div class="donut-empty">Sin datos para mostrar</div>';
+        }
+    }
+
+    // Comparativa mes actual vs. mes anterior
+    $('reportCurrentMonthTotal').textContent = money(data.currentMonthTotal.total);
+    $('reportPreviousMonthTotal').textContent = money(data.previousMonthTotal.total);
+    const cmDeltaEl = $('reportCurrentMonthDelta');
+    cmDeltaEl.textContent = data.monthDelta.text;
+    cmDeltaEl.className = `report-delta ${data.monthDelta.dir}`.trim();
+
+    // Pagos recurrentes
+    $('reportRecurring').innerHTML = data.recurringList.length
+        ? data.recurringList.map(payment => `<tr><td>${escapeHtml(payment.name)}</td><td><span class="cat"><i class="dot" style="background:${categoryColor(payment.category)}"></i>${escapeHtml(payment.category || 'Sin categoría')}</span></td><td style="text-align:right;font-weight:800">${money(payment.amount)}</td><td>${paymentStatusLabel(getPaymentStatus(payment))}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="report-recurring-empty">No hay pagos recurrentes en este rango.</td></tr>';
+}
+// ---------- Diagramas ----------
+function chartsRangeBounds() {
+    return { from: chartsDateFrom || '', to: chartsDateTo || '' };
+}
+function chartsRangeText() {
+    if (chartsRange === 'custom') {
+        if (chartsDateFrom && chartsDateTo) return `${reportDateLabel(chartsDateFrom)} – ${reportDateLabel(chartsDateTo)}`;
+        if (chartsDateFrom) return `Desde ${reportDateLabel(chartsDateFrom)}`;
+        if (chartsDateTo) return `Hasta ${reportDateLabel(chartsDateTo)}`;
+        return 'Rango personalizado';
+    }
+    return { month:'Este mes', quarter:'Últimos 3 meses', half:'Últimos 6 meses', year:'Este año', all:'Todo el historial' }[chartsRange] || 'Últimos 6 meses';
+}
+function chartsApplyPreset(preset) {
+    const today = new Date();
+    const to = formatDateKey(today);
+    chartsRange = preset;
+    if (preset === 'all') { chartsDateFrom = ''; chartsDateTo = ''; }
+    else if (preset === 'month') { chartsDateFrom = formatDateKey(new Date(today.getFullYear(), today.getMonth(), 1)); chartsDateTo = to; }
+    else if (preset === 'quarter') { chartsDateFrom = formatDateKey(new Date(today.getFullYear(), today.getMonth() - 2, 1)); chartsDateTo = to; }
+    else if (preset === 'half') { chartsDateFrom = formatDateKey(new Date(today.getFullYear(), today.getMonth() - 5, 1)); chartsDateTo = to; }
+    else if (preset === 'year') { chartsDateFrom = `${today.getFullYear()}-01-01`; chartsDateTo = to; }
+    const fromInput = $('chartsFrom');
+    const toInput = $('chartsTo');
+    if (fromInput) fromInput.value = chartsDateFrom;
+    if (toInput) toInput.value = chartsDateTo;
+}
+function syncChartsPresetHighlight() {
+    document.querySelectorAll('.charts-presets .chip').forEach(chip => {
+        chip.classList.toggle('is-active', chip.dataset.chartRange === chartsRange);
+    });
+}
+function monthKeysBetween(fromKey, toKey) {
+    const keys = [];
+    let [year, month] = String(fromKey).split('-').map(Number);
+    const [endYear, endMonth] = String(toKey).split('-').map(Number);
+    if (!year || !month || !endYear || !endMonth) return keys;
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+        keys.push(`${year}-${String(month).padStart(2, '0')}`);
+        month += 1;
+        if (month > 12) { month = 1; year += 1; }
+        if (keys.length > 240) break;
+    }
+    return keys;
+}
+function monthShortLabel(monthKey) {
+    const parsed = new Date(`${monthKey}-02`);
+    return Number.isNaN(parsed.getTime()) ? monthKey : parsed.toLocaleDateString('es-CO', { month:'short' }).replace('.', '');
+}
+function chartsFilteredList() {
+    const bounds = chartsRangeBounds();
+    return payments.filter(payment => {
+        const date = String(payment.date || '');
+        if (!date) return false;
+        if (bounds.from && date < bounds.from) return false;
+        if (bounds.to && date > bounds.to) return false;
+        if (chartsFilters.category && payment.category !== chartsFilters.category) return false;
+        if (chartsFilters.status && getPaymentStatus(payment) !== chartsFilters.status) return false;
+        if (chartsFilters.recurring && !payment.recurring) return false;
+        const amount = Number(payment.amount || 0);
+        if (chartsFilters.amountFrom && amount < chartsFilters.amountFrom) return false;
+        if (chartsFilters.amountTo && amount > chartsFilters.amountTo) return false;
+        return true;
+    });
+}
+function computeCharts() {
+    const bounds = chartsRangeBounds();
+    const list = chartsFilteredList();
+    const aggregate = buildPaymentsAggregate(list);
+    const nowKey = formatDateKey(new Date()).slice(0, 7);
+    const earliestKey = list.map(payment => String(payment.date || '').slice(0, 7)).filter(key => /^\d{4}-\d{2}$/.test(key)).sort()[0];
+    const startKey = chartsRange === 'all' ? (earliestKey || nowKey) : (bounds.from ? bounds.from.slice(0, 7) : nowKey);
+    const allMonths = monthKeysBetween(startKey, nowKey).map(key => aggregate.byMonth.get(key) || { key, count: 0, total: 0, paid: 0, pending: 0 });
+    const months = allMonths.slice(-12);
+    const maxMonth = months.reduce((max, month) => Math.max(max, month.total), 0) || 1;
+
+    const categoriesData = Array.from(aggregate.byCategory.values())
+        .sort((a, b) => b.total - a.total)
+        .map(entry => ({ name: entry.name, color: categoryColor(entry.name), total: entry.total, count: entry.count }));
+    const statuses = PAYMENT_STATUSES.map(key => {
+        const entry = aggregate.byStatus.get(key) || { count: 0, total: 0 };
+        return { key, label: paymentStatusLabel(key), total: entry.total, count: entry.count, color: CHART_STATUS_COLORS[key] };
+    });
+    const recurringTotal = list.filter(payment => payment.recurring).reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const uniqueTotal = Math.max(0, aggregate.total - recurringTotal);
+    const topCategories = categoriesData.slice(0, 6);
+    const maxTop = topCategories.reduce((max, entry) => Math.max(max, entry.total), 0) || 1;
+
+    const weekdayLabels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const weekdayTotals = Array(7).fill(0);
+    list.forEach(payment => {
+        const day = new Date(String(payment.date || '') + 'T12:00:00').getDay();
+        if (!Number.isNaN(day)) weekdayTotals[day] += Number(payment.amount || 0);
+    });
+    const weekdayData = weekdayLabels.map((label, index) => ({ label, total: weekdayTotals[index] })).sort((a, b) => b.total - a.total);
+    const maxWeekday = weekdayData.reduce((max, entry) => Math.max(max, entry.total), 0) || 1;
+
+    const [year, month] = chartsMonth.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate() || 31;
+    const daily = Array(daysInMonth).fill(0);
+    list.forEach(payment => {
+        const date = String(payment.date || '');
+        if (!date.startsWith(chartsMonth)) return;
+        const day = Number(date.slice(8, 10));
+        if (day >= 1 && day <= daysInMonth) daily[day - 1] += Number(payment.amount || 0);
+    });
+    const cumulative = [];
+    let running = 0;
+    daily.forEach(value => { running += value; cumulative.push(running); });
+
+    const filterBits = [];
+    if (chartsFilters.category) filterBits.push(`Categoría: ${chartsFilters.category}`);
+    if (chartsFilters.status) filterBits.push(`Estado: ${paymentStatusLabel(chartsFilters.status)}`);
+    if (chartsFilters.recurring) filterBits.push('Solo recurrentes');
+    if (chartsFilters.amountFrom) filterBits.push(`Desde ${money(chartsFilters.amountFrom)}`);
+    if (chartsFilters.amountTo) filterBits.push(`Hasta ${money(chartsFilters.amountTo)}`);
+
+    return { list, aggregate, months, monthsTotal: allMonths.length, maxMonth, categoriesData, statuses, recurringTotal, uniqueTotal, topCategories, maxTop, weekdayData, maxWeekday, cumulative, daysInMonth, monthTotal: running, filterBits };
+}
+function chartsFiltersActive() {
+    return !!(chartsFilters.category || chartsFilters.status || chartsFilters.recurring || chartsFilters.amountFrom || chartsFilters.amountTo);
+}
+function renderChartsDonut(donutId, totalId, legendId, entries) {
+    const donut = $(donutId);
+    if (!donut) return;
+    const totalEl = $(totalId);
+    const legend = $(legendId);
+    const values = entries.filter(entry => Number(entry.value) > 0);
+    const total = values.reduce((sum, entry) => sum + Number(entry.value), 0);
+    if (totalEl) totalEl.textContent = total > 0 ? money(total) : '$ 0';
+    donut.dataset.values = JSON.stringify(values);
+    if (total <= 0) {
+        donut.style.background = 'conic-gradient(#dfe4dc 0deg 360deg)';
+        donut.setAttribute('aria-label', 'Sin datos para mostrar');
+        if (legend) legend.innerHTML = '<div class="donut-empty">Sin datos para mostrar</div>';
+        return;
+    }
+    let current = 0;
+    donut.style.background = `conic-gradient(${values.map(entry => {
+        const start = current;
+        const end = current + (Number(entry.value) / total) * 360;
+        current = end;
+        return `${entry.color} ${start}deg ${end}deg`;
+    }).join(', ')})`;
+    donut.setAttribute('aria-label', `Total ${money(total)}`);
+    if (legend) {
+        legend.innerHTML = values.map(entry => {
+            const pct = total > 0 ? (Number(entry.value) / total) * 100 : 0;
+            return `<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${escapeHtml(entry.color)}"></span><span class="donut-legend-label">${escapeHtml(entry.label)}</span><span class="donut-legend-value">${money(entry.value)} · ${pct.toFixed(0)}%</span></div>`;
+        }).join('');
+    }
+}
+function chartsAreaSvg(cumulative, days, total) {
+    if (!cumulative.length) return '<div class="chart-empty">Sin datos para mostrar</div>';
+    const W = 680, H = 210, padX = 10, padTop = 14, padBottom = 12;
+    const max = Math.max(total, 1);
+    const x = index => days <= 1 ? W / 2 : padX + (index / (days - 1)) * (W - padX * 2);
+    const y = value => H - padBottom - (value / max) * (H - padTop - padBottom);
+    const points = cumulative.map((value, index) => [x(index), y(value)]);
+    const line = points.map(([px, py], index) => `${index === 0 ? 'M' : 'L'} ${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
+    const area = `${line} L ${points[points.length - 1][0].toFixed(1)} ${H - padBottom} L ${points[0][0].toFixed(1)} ${H - padBottom} Z`;
+    const grid = [0, 0.5, 1].map(ratio => {
+        const gy = (padTop + ratio * (H - padTop - padBottom)).toFixed(1);
+        return `<line x1="${padX}" y1="${gy}" x2="${W - padX}" y2="${gy}" class="charts-grid-line" vector-effect="non-scaling-stroke"/>`;
+    }).join('');
+    const last = points[points.length - 1];
+    const ticks = [1, Math.round(days * 0.25), Math.round(days * 0.5), Math.round(days * 0.75), days]
+        .filter((day, index, arr) => day >= 1 && day <= days && arr.indexOf(day) === index);
+    return `<div class="charts-area-wrap"><svg class="charts-area" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Gasto acumulado: ${money(total)}">${grid}<path d="${area}" class="charts-area-fill"/><path d="${line}" class="charts-area-line" vector-effect="non-scaling-stroke"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4" class="charts-area-dot" vector-effect="non-scaling-stroke"/></svg><div class="charts-axis">${ticks.map(day => `<span>${day}</span>`).join('')}</div></div>`;
+}
+function renderCharts() {
+    const view = $('chartsView');
+    if (!view || view.classList.contains('hidden')) return;
+    const currentKey = formatDateKey(new Date()).slice(0, 7);
+
+    const categorySelect = $('chartsFilterCategory');
+    if (categorySelect) {
+        const names = Array.from(new Set([...categories.map(category => category.name), ...payments.map(payment => payment.category).filter(Boolean)])).sort((a, b) => a.localeCompare(b, 'es'));
+        if (chartsFilters.category && !names.includes(chartsFilters.category)) chartsFilters.category = '';
+        categorySelect.innerHTML = '<option value="">Todas</option>' + names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+        categorySelect.value = chartsFilters.category;
+    }
+    const statusSelect = $('chartsFilterStatus');
+    if (statusSelect) statusSelect.value = chartsFilters.status;
+    const recurringCheck = $('chartsFilterRecurring');
+    if (recurringCheck) recurringCheck.checked = chartsFilters.recurring;
+
+    const monthKeys = Array.from(new Set(chartsFilteredList().map(payment => String(payment.date || '').slice(0, 7)).filter(key => /^\d{4}-\d{2}$/.test(key)))).sort().reverse();
+    if (!monthKeys.length) monthKeys.push(currentKey);
+    if (!monthKeys.includes(chartsMonth)) chartsMonth = monthKeys[0];
+
+    const data = computeCharts();
+    $('chartsFilterMeta').textContent = data.filterBits.length ? data.filterBits.join(' · ') : 'Sin filtros';
+    $('chartsMeta').textContent = `${data.list.length} pago${data.list.length === 1 ? '' : 's'} · ${chartsRangeText()}${data.filterBits.length ? ' · filtros activos' : ''}`;
+    const monthsMeta = data.monthsTotal > data.months.length
+        ? `${data.months.length} de ${data.monthsTotal} meses · ${money(data.aggregate.total)}`
+        : `${data.months.length} mes${data.months.length === 1 ? '' : 'es'} · ${money(data.aggregate.total)}`;
+    $('chartsEvolutionMeta').textContent = monthsMeta;
+
+    const evolution = $('chartsEvolution');
+    if (evolution) {
+        evolution.style.gridTemplateColumns = `repeat(${Math.max(1, data.months.length)}, minmax(0,1fr))`;
+        evolution.innerHTML = data.months.length
+            ? data.months.map(month => {
+                const heightPx = month.total === 0 ? 8 : Math.max((month.total / data.maxMonth) * 140, 8);
+                const pct = data.aggregate.total > 0 ? Math.round((month.total / data.aggregate.total) * 100) : 0;
+                const label = month.total > 0 ? `<div class="bar-value"><span class="bar-value-amount">${compactMoney(month.total)}</span><span class="bar-value-pct">${pct}%</span></div>` : '';
+                const fullLabel = formatMonthLabel(month.key);
+                return `<div class="bar-wrap" role="img" aria-label="${escapeHtml(fullLabel)}: ${money(month.total)}">${label}<div class="bar ${month.key === currentKey ? 'current' : ''}${month.total === 0 ? ' is-zero' : ''}" style="height:${heightPx}px" title="${escapeHtml(fullLabel)}: ${money(month.total)}"></div><span>${escapeHtml(monthShortLabel(month.key))}</span></div>`;
+            }).join('')
+            : '<div class="chart-empty">Sin meses para mostrar</div>';
+    }
+
+    renderChartsDonut('chartsCategoryDonut', 'chartsCategoryTotal', 'chartsCategoryLegend', data.categoriesData.map(entry => ({ label: entry.name, value: entry.total, color: entry.color })));
+    renderChartsDonut('chartsStatusDonut', 'chartsStatusTotal', 'chartsStatusLegend', data.statuses.map(entry => ({ label: entry.label, value: entry.total, color: entry.color })));
+    renderChartsDonut('chartsRecurringDonut', 'chartsRecurringTotal', 'chartsRecurringLegend', [
+        { label:'Recurrentes', value:data.recurringTotal, color:'#c7f36b' },
+        { label:'Únicos', value:data.uniqueTotal, color:'#88c9ed' }
+    ]);
+
+    const topEl = $('chartsTopCategories');
+    if (topEl) {
+        topEl.innerHTML = data.topCategories.length
+            ? data.topCategories.map(entry => `<div class="report-bar"><span class="report-bar-label">${escapeHtml(entry.name)}</span><div class="report-bar-track"><i style="width:${((entry.total / data.maxTop) * 100).toFixed(1)}%;background:${escapeHtml(entry.color)}"></i></div><strong>${money(entry.total)}</strong></div>`).join('')
+            : '<div class="report-bar-zero">Sin gastos en el periodo.</div>';
+    }
+    const weekdayEl = $('chartsWeekday');
+    if (weekdayEl) {
+        weekdayEl.innerHTML = data.weekdayData.some(entry => entry.total > 0)
+            ? data.weekdayData.filter(entry => entry.total > 0).map(entry => `<div class="report-bar"><span class="report-bar-label">${escapeHtml(entry.label)}</span><div class="report-bar-track"><i style="width:${((entry.total / data.maxWeekday) * 100).toFixed(1)}%;background:var(--blue)"></i></div><strong>${money(entry.total)}</strong></div>`).join('')
+            : '<div class="report-bar-zero">Sin gastos en el periodo.</div>';
+    }
+
+    const select = $('chartsMonthSelect');
+    if (select) {
+        select.innerHTML = monthKeys.map(key => `<option value="${key}">${escapeHtml(formatMonthLabel(key))}</option>`).join('');
+        select.value = chartsMonth;
+    }
+
+    const accumulated = $('chartsAccumulated');
+    if (accumulated) {
+        accumulated.innerHTML = data.monthTotal > 0
+            ? chartsAreaSvg(data.cumulative, data.daysInMonth, data.monthTotal)
+            : '<div class="chart-empty">Sin gastos registrados este mes.</div>';
+    }
+    $('chartsAccumulatedMeta').textContent = `${formatMonthLabel(chartsMonth)} · ${money(data.monthTotal)}`;
+}
+function exportChartsCsv() {
+    const data = computeCharts();
+    const bounds = chartsRangeBounds();
+    const period = bounds.from ? `${bounds.from} a ${bounds.to}` : 'Todo el historial';
+    const filtersText = data.filterBits.length ? data.filterBits.join(' · ') : 'Ninguno';
+    const rows = [['Seccion', 'Elemento', 'Pagos', 'Monto', 'Porcentaje', 'Detalle']];
+    rows.push(['Periodo', chartsRangeText(), data.list.length, data.aggregate.total, '100 %', period]);
+    rows.push(['Filtros', filtersText, '', '', '', '']);
+    data.months.forEach(month => rows.push(['Mes', formatMonthLabel(month.key), month.count, month.total, `${reportShare(month.total, data.aggregate.total).toFixed(1)} %`, '']));
+    data.categoriesData.forEach(entry => rows.push(['Categoria', entry.name, entry.count, entry.total, `${reportShare(entry.total, data.aggregate.total).toFixed(1)} %`, '']));
+    data.statuses.forEach(entry => rows.push(['Estado', entry.label, entry.count, entry.total, `${reportShare(entry.total, data.aggregate.total).toFixed(1)} %`, '']));
+    data.weekdayData.forEach(entry => rows.push(['Día de la semana', entry.label, '', entry.total, `${reportShare(entry.total, data.aggregate.total).toFixed(1)} %`, '']));
+    rows.push(['Recurrencia', 'Recurrentes', '', data.recurringTotal, `${reportShare(data.recurringTotal, data.aggregate.total).toFixed(1)} %`, '']);
+    rows.push(['Recurrencia', 'Unicos', '', data.uniqueTotal, `${reportShare(data.uniqueTotal, data.aggregate.total).toFixed(1)} %`, '']);
+    rows.push(['Acumulado', formatMonthLabel(chartsMonth), '', data.monthTotal, '', 'Gasto acumulado del mes']);
+    downloadCsv(`diagramas-${formatDateKey(new Date())}.csv`, rows);
+}
+function csvSafe(value) {
+    const text = String(value ?? '');
+    return /^[=+\-@\t\r]/.test(text) ? "'" + text : text;
+}
+function showToast(message, type, action) {
+    const container = $('toastContainer');
+    if (!container) { console.warn(message); return; }
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (type ? ' is-' + type : '');
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+    if (action) {
+        const btn = document.createElement('button');
+        btn.className = 'toast-action';
+        btn.textContent = action.label;
+        btn.onclick = () => { try { action.onClick(); } catch (e) { console.error(e); } toast.remove(); };
+        toast.appendChild(btn);
+    }
+    container.appendChild(toast);
+    const duration = action ? 5000 : 3200;
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity .2s ease'; setTimeout(() => toast.remove(), 220); }, duration);
+}
+async function exportPdf(viewId) {
+    if (typeof html2canvas === 'undefined' || typeof jspdf === 'undefined') {
+        showToast('Librerías PDF no disponibles. Usa Imprimir / PDF.', 'error');
+        window.print();
+        return;
+    }
+    const target = $(viewId) || document.querySelector('main');
+    if (!target) { showToast('No hay vista para exportar.', 'error'); return; }
+    showToast('Generando PDF...', 'success');
+    try {
+        const canvas = await html2canvas(target, { scale: 2, useCORS: true, backgroundColor: getComputedStyle(document.body).backgroundColor });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = jspdf;
+        const pdf = new jsPDF({ orientation: canvas.width > canvas.height * 1.2 ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const imgWidth = pageWidth - 20;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 10;
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight, '', 'FAST');
+        heightLeft -= (pageHeight - 20);
+        while (heightLeft > 0) {
+            position = 10 - (imgHeight - heightLeft);
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight, '', 'FAST');
+            heightLeft -= (pageHeight - 20);
+        }
+        pdf.save(`cartera-${viewId || 'informe'}-${new Date().toISOString().slice(0, 10)}.pdf`);
+        showToast('PDF generado.', 'success');
+        return;
+
+
+        showToast('PDF generado.', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('No fue posible generar el PDF. Usa Imprimir / PDF.', 'error');
+    }
 }
 function downloadCsv(filename, rows) {
-    const csv = rows.map(row => row.map(value => '"' + String(value ?? '').replaceAll('"', '""') + '"').join(',')).join('\n');
+    const csv = rows.map(row => row.map(value => '"' + csvSafe(value).replaceAll('"', '""') + '"').join(',')).join('\n');
     const blob = new Blob(['\ufeff' + csv], { type:'text/csv;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -809,7 +1618,7 @@ function findImportDate(value) {
     if (!parsed) return null;
     return formatDateKey(parsed);
 }
-function importData(text) {
+async function importData(text) {
     const { header, rows } = parseCsvRows(text);
     const indexOf = names => header.length ? header.findIndex(cell => names.includes(cell)) : -1;
     const map = {
@@ -853,12 +1662,20 @@ function importData(text) {
     if (createdCategories) persistCategories();
     if (imported) {
         localStorage.setItem('cartera_payments', JSON.stringify(payments));
+        const collection = userCollection('payments');
+        if (collection) {
+            const batch = db.batch();
+            payments.slice(-imported).forEach(payment => {
+                batch.set(collection.doc(payment.id), payment);
+            });
+            await batch.commit().catch(() => {});
+        }
         populateMonths();
         render();
     }
-    alert(imported
+    showToast(imported
         ? `Importación lista: ${imported} pago${imported === 1 ? '' : 's'} añadido${imported === 1 ? '' : 's'}${createdCategories ? ` y ${createdCategories} categoría${createdCategories === 1 ? '' : 's'} nueva${createdCategories === 1 ? '' : 's'}` : ''}.${skipped ? ` ${skipped} fila${skipped === 1 ? '' : 's'} omitida${skipped === 1 ? '' : 's'} (vacía o duplicada).` : ''}`
-        : 'No se importó ningún pago: revisa que el archivo sea un CSV con las columnas Concepto, Categoría, Fecha, Estado e Importe.');
+        : 'No se importó ningún pago: revisa que el archivo sea un CSV con las columnas Concepto, Categoría, Fecha, Estado e Importe.', imported ? 'success' : 'error');
     return { imported, skipped, createdCategories };
 }
 function nextMonthDate(dateKey) {
@@ -1279,8 +2096,12 @@ function setTheme(dark) {
 function setPaymentFormCategoryOptions() {
     $('categorySelect').innerHTML = categories.map(category => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join('');
 }
+function setIncomeFormCategoryOptions() {
+    const sel = $('incomeCategorySelect');
+    if (sel) sel.innerHTML = categories.map(category => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join('');
+}
 const userCollection = name => {
-    if (!db || !currentUser) return null;
+    if (!db || !currentUser || isLocalOnlySession(currentUser)) return null;
     return db.collection('users').doc(currentUser.uid).collection(name);
 };
 populateMonths();
@@ -1288,18 +2109,30 @@ if ($('pageSizeSelect')) $('pageSizeSelect').value = String(paymentFilters.pageS
 $('monthFilter').value = new Date().toISOString().slice(0,7);
 $('todayLabel').textContent = new Date().toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long'});
 $('addBtn').onclick = () => {
+    editingPaymentId = null;
+    selectedAttachmentFile = null;
     $('paymentForm').reset();
     $('paymentForm').elements.date.value = new Date().toISOString().slice(0,10);
+    if ($('paymentCurrency')) $('paymentCurrency').value = appCurrency;
+    if ($('paymentAttachmentPreview')) $('paymentAttachmentPreview').classList.add('hidden');
+    if ($('paymentAttachmentInfo')) $('paymentAttachmentInfo').textContent = '';
     setPaymentFormCategoryOptions();
+    const title = $('paymentForm').closest('.modal').querySelector('h2');
+    if (title) title.textContent = 'Registrar nuevo pago';
+    const btn = $('paymentForm').querySelector('.btn-dark');
+    if (btn) btn.textContent = 'Guardar pago';
+    const editSeriesField = $('editSeriesField');
+    if (editSeriesField) editSeriesField.style.display = 'none';
     openModal('paymentModal');
 };
 $('exportBtn').onclick = exportData;
-$('reportsNav').onclick = () => {
+const navReports = $('reportsNav'); if (navReports) navReports.onclick = () => {
     showView('reportsView');
     setActiveNav('reportsNav');
     renderReports();
 };
 $('reportPrintBtn').onclick = () => window.print();
+if ($('reportPdfBtn')) $('reportPdfBtn').onclick = () => exportPdf('reportsView');
 $('reportCsvBtn').onclick = exportReportCsv;
 $('reportBackupBtn').onclick = exportData;
 $('reportFrom').onchange = event => {
@@ -1316,7 +2149,36 @@ document.querySelectorAll('.report-presets .chip').forEach(chip => {
     chip.onclick = () => setReportRange(chip.dataset.range);
 });
 setReportRange('quarter');
-$('importNav').onclick = () => openModal('importModal');
+$('reportFilterCategory').onchange = () => {
+    reportFiltersExtended.category = $('reportFilterCategory').value;
+    renderReports();
+};
+$('reportFilterStatus').onchange = () => {
+    reportFiltersExtended.status = $('reportFilterStatus').value;
+    renderReports();
+};
+$('reportFilterRecurring').onchange = () => {
+    reportFiltersExtended.recurring = $('reportFilterRecurring').checked;
+    renderReports();
+};
+$('reportFilterAmountFrom').oninput = () => {
+    reportFiltersExtended.amountFrom = parseMoneyInput($('reportFilterAmountFrom').value);
+    renderReports();
+};
+$('reportFilterAmountTo').oninput = () => {
+    reportFiltersExtended.amountTo = parseMoneyInput($('reportFilterAmountTo').value);
+    renderReports();
+};
+$('reportFilterClear').onclick = () => {
+    reportFiltersExtended = { category:'', status:'', recurring:false, amountFrom:'', amountTo:'' };
+    $('reportFilterCategory').value = '';
+    $('reportFilterStatus').value = '';
+    $('reportFilterRecurring').checked = false;
+    $('reportFilterAmountFrom').value = '';
+    $('reportFilterAmountTo').value = '';
+    renderReports();
+};
+const navImport = $('importNav'); if (navImport) navImport.onclick = () => openModal('importModal');
 $('importTemplateBtn').onclick = () => {
     const header = ['Concepto', 'Categoria', 'Fecha', 'Estado', 'Importe', 'Recurrente'];
     const rows = [
@@ -1338,12 +2200,12 @@ $('importFile').onchange = event => {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-        importData(String(reader.result || ''));
+        importData(String(reader.result || '')).catch(() => showToast('No fue posible importar los datos.', 'error'));
         event.target.value = '';
         closeModals();
     };
     reader.onerror = () => {
-        alert('No fue posible leer el archivo.');
+        showToast('No fue posible leer el archivo.', 'error');
         event.target.value = '';
     };
     reader.readAsText(file, 'utf-8');
@@ -1371,6 +2233,84 @@ $('filterCategory').onchange = () => {
 $('filterStatus').onchange = () => {
     paymentFilters.status = $('filterStatus').value;
     paymentFilters.page = 1;
+    render();
+};
+const paymentSearchInput = $('paymentSearch');
+if (paymentSearchInput) {
+    paymentSearchInput.addEventListener('input', () => {
+        paymentFilters.search = paymentSearchInput.value;
+        paymentFilters.page = 1;
+        render();
+    });
+}
+// Acciones masivas
+document.addEventListener('change', event => {
+    const cb = event.target.closest('.row-select');
+    if (cb) {
+        if (cb.checked) selectedPayments.add(cb.dataset.selectId);
+        else selectedPayments.delete(cb.dataset.selectId);
+        updateBulkBar();
+        return;
+    }
+    if (event.target.id === 'selectAllPayments') {
+        document.querySelectorAll('.row-select').forEach(box => {
+            if (box.checked !== event.target.checked) {
+                box.checked = event.target.checked;
+                if (event.target.checked) selectedPayments.add(box.dataset.selectId);
+                else selectedPayments.delete(box.dataset.selectId);
+            }
+        });
+        updateBulkBar();
+    }
+});
+const bulkMarkPaid = $('bulkMarkPaid');
+if (bulkMarkPaid) bulkMarkPaid.onclick = async () => {
+    const ids = [...selectedPayments];
+    ids.forEach(id => {
+        const payment = payments.find(item => item.id === id);
+        if (payment) payment.status = 'pagado';
+    });
+    localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    const collection = userCollection('payments');
+    if (collection) {
+        await Promise.all(ids
+            .filter(id => !String(id).startsWith('local-'))
+            .map(id => collection.doc(id).update({ status: 'pagado' }).catch(() => {})));
+    }
+    selectedPayments.clear();
+    render();
+    showToast('Pagos marcados como pagados.', 'success');
+};
+const bulkDelete = $('bulkDelete');
+if (bulkDelete) bulkDelete.onclick = async () => {
+    if (!confirm(`¿Eliminar ${selectedPayments.size} pago${selectedPayments.size === 1 ? '' : 's'} seleccionado${selectedPayments.size === 1 ? '' : 's'}?`)) return;
+    const ids = [...selectedPayments];
+    const deleted = payments.filter(payment => selectedPayments.has(payment.id));
+    payments = payments.filter(payment => !selectedPayments.has(payment.id));
+    localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    const collection = userCollection('payments');
+    if (collection) {
+        await Promise.all(ids
+            .filter(id => !String(id).startsWith('local-'))
+            .map(id => collection.doc(id).delete().catch(() => {})));
+    }
+    selectedPayments.clear();
+    render();
+    showToast(`${deleted.length} pago${deleted.length === 1 ? '' : 's'} eliminado${deleted.length === 1 ? '' : 's'}.`, 'success', { label: 'Deshacer', onClick: async () => {
+        payments = payments.concat(deleted);
+        localStorage.setItem('cartera_payments', JSON.stringify(payments));
+        if (collection) {
+            await Promise.all(deleted
+                .filter(p => !String(p.id).startsWith('local-'))
+                .map(p => collection.doc(p.id).set(p).catch(() => {})));
+        }
+        render();
+        showToast('Pagos restaurados.', 'success');
+    } });
+};
+const bulkClearSel = $('bulkClearSel');
+if (bulkClearSel) bulkClearSel.onclick = () => {
+    selectedPayments.clear();
     render();
 };
 function resetFilters() {
@@ -1413,8 +2353,62 @@ $('paymentForm').onsubmit = async e => {
         const data = Object.fromEntries(new FormData(e.target));
         const recurring = data.recurring === '1';
         delete data.recurring;
-        const payment = { ...data, status:getPaymentStatus(data), amount: parseMoneyInput(data.amount) };
+        const payment = {
+            ...data,
+            status: getPaymentStatus(data),
+            amount: parseMoneyInput(data.amount),
+            currency: data.currency || appCurrency,
+            updatedAt: new Date().toISOString()
+        };
         if (recurring) payment.recurring = true;
+        if (selectedAttachmentFile) {
+            const att = await uploadReceiptFile(selectedAttachmentFile, editingPaymentId || Date.now());
+            if (att) payment.attachment = att;
+        } else if (editingPaymentId) {
+            const existing = payments.find(p => p.id === editingPaymentId);
+            if (existing && existing._removeAttachment) {
+                if (existing.attachment?.path && storage) storage.ref(existing.attachment.path).delete().catch(() => {});
+                delete payment.attachment;
+            } else if (existing && existing.attachment) {
+                payment.attachment = existing.attachment;
+            }
+        }
+        if (editingPaymentId) {
+            const idx = payments.findIndex(p => p.id === editingPaymentId);
+            const originalName = idx >= 0 ? payments[idx].name : null;
+            const originalCategory = idx >= 0 ? payments[idx].category : null;
+            if (idx >= 0) {
+                payments[idx] = { ...payments[idx], name: payment.name, amount: payment.amount, category: payment.category, date: payment.date, status: payment.status, recurring: payment.recurring };
+            }
+            if (data.editSeries === '1' && originalName !== null) {
+                payments.forEach(p => {
+                    if (p.id !== editingPaymentId && p.recurring && p.name === originalName && p.category === originalCategory) {
+                        p.name = payment.name;
+                        p.category = payment.category;
+                        p.amount = payment.amount;
+                        p.recurring = payment.recurring;
+                    }
+                });
+            }
+            localStorage.setItem('cartera_payments', JSON.stringify(payments));
+            if (collection && !String(editingPaymentId).startsWith('local-')) {
+                await collection.doc(editingPaymentId).set(payments[idx]).catch(() => {});
+                if (data.editSeries === '1') {
+                    const clones = payments.filter(p => p.id !== editingPaymentId && p.recurring && p.name === payment.name && p.category === payment.category);
+                    await Promise.all(clones.filter(p => !String(p.id).startsWith('local-')).map(p => collection.doc(p.id).set(p).catch(() => {})));
+                }
+            }
+            const editSeriesField = $('editSeriesField');
+            if (editSeriesField) editSeriesField.style.display = 'none';
+            editingPaymentId = null;
+            populateMonths();
+            paymentFilters.page = 1;
+            render();
+            closeModals();
+            syncRecurringPayments();
+            showToast('Pago actualizado.', 'success');
+            return;
+        }
         if (!collection) {
             payments.push({ ...payment, id: `local-${Date.now()}` });
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
@@ -1430,7 +2424,7 @@ $('paymentForm').onsubmit = async e => {
         closeModals();
         syncRecurringPayments();
     } catch (error) {
-        alert('No fue posible guardar el pago.');
+        showToast('No fue posible guardar el pago.', 'error');
     }
 };
 let editingCategoryId = null;
@@ -1488,6 +2482,7 @@ function freeFormColor() {
 function resetCategoryForm() {
     editingCategoryId = null;
     $('categoryForm').reset();
+    if ($('categoryFormMonthBudget')) $('categoryFormMonthBudget').value = '';
     $('categoryForm').elements.color.value = freeFormColor();
     $('categoryFormTitle').textContent = 'Nueva categoría';
     $('saveCategoryBtn').textContent = 'Crear categoría';
@@ -1503,6 +2498,8 @@ function startCategoryEdit(id) {
     $('categoryForm').elements.name.value = category.name;
     $('categoryForm').elements.color.value = category.color;
     $('categoryForm').elements.budget.value = category.budget ? formatMoneyInput(category.budget) : '';
+    const mBudget = (category.monthlyBudgets && category.monthlyBudgets[selectedBudgetMonth]);
+    if ($('categoryFormMonthBudget')) $('categoryFormMonthBudget').value = mBudget ? formatMoneyInput(mBudget) : '';
     $('categoryFormTitle').textContent = 'Editar categoría';
     $('saveCategoryBtn').textContent = 'Guardar cambios';
     $('cancelCategoryBtn').hidden = false;
@@ -1545,8 +2542,16 @@ $('categoryForm').onsubmit = async e => {
         return;
     }
     const budget = Math.max(0, parseMoneyInput(data.budget));
+    const monthBudgetValue = $('categoryFormMonthBudget') ? parseMoneyInput($('categoryFormMonthBudget').value) : 0;
+    const existingCat = editingCategoryId ? categories.find(c => c.id === editingCategoryId) : null;
+    const monthlyBudgets = { ...(existingCat?.monthlyBudgets || {}) };
+    if (monthBudgetValue > 0) {
+        monthlyBudgets[selectedBudgetMonth] = monthBudgetValue;
+    } else if (existingCat && monthlyBudgets[selectedBudgetMonth] !== undefined) {
+        delete monthlyBudgets[selectedBudgetMonth];
+    }
     const collection = userCollection('categories');
-    const payload = { name, color, budget };
+    const payload = { name, color, budget, monthlyBudgets, updatedAt: new Date().toISOString() };
     try {
         if (editingCategoryId) {
             const category = categories.find(item => item.id === editingCategoryId);
@@ -1594,7 +2599,7 @@ $('categoryList').onclick = async e => {
         if (editingCategoryId === id) resetCategoryForm();
         render();
     } catch (error) {
-        alert('No fue posible eliminar la categoría.');
+        showToast('No fue posible eliminar la categoría.', 'error');
     }
 };
 $('newCategoryBtn').onclick = () => {
@@ -1692,6 +2697,12 @@ function renderNotifications() {
         : notifFilter === 'sinpagar'
             ? attention
             : (notifShowSeen ? attention : unseen);
+
+    const previousUnseen = window.__unseenCount;
+    window.__unseenCount = unseen.length;
+    if (previousUnseen !== undefined && unseen.length > previousUnseen && navigator.vibrate) {
+        navigator.vibrate([120, 60, 120]);
+    }
 
     const itemHtml = entry => {
         const { payment, alert, unread } = entry;
@@ -1809,7 +2820,7 @@ $('notifList').onclick = async event => {
         if (!payment) return;
         payButton.disabled = true;
         const updated = await changePaymentStatus(payment, 'pagado');
-        if (!updated) { payButton.disabled = false; alert('No fue posible actualizar el pago.'); }
+        if (!updated) { payButton.disabled = false; showToast('No fue posible actualizar el pago.', 'error'); }
         return;
     }
     const goButton = event.target.closest('[data-notif-go]');
@@ -2003,18 +3014,65 @@ window.addEventListener('resize', () => { if (!$('simTour').classList.contains('
 window.addEventListener('scroll', () => { if (!$('simTour').classList.contains('hidden')) simTourPosition(); }, true);
 
 $('payments').onclick = async e => {
+    const editId = e.target.dataset.editPayment;
+    if (editId) {
+        const payment = payments.find(item => item.id === editId);
+        if (!payment) return;
+        editingPaymentId = editId;
+        setPaymentFormCategoryOptions();
+        const form = $('paymentForm');
+        if (form) {
+            form.elements.name.value = payment.name || '';
+            form.elements.amount.value = formatMoneyInput(String(payment.amount || ''));
+            form.elements.category.value = payment.category || '';
+            form.elements.date.value = payment.date || '';
+            form.elements.status.value = getPaymentStatus(payment);
+            if (form.elements.currency) form.elements.currency.value = payment.currency || appCurrency;
+            delete payment._removeAttachment;
+            selectedAttachmentFile = null;
+            const attPreview = $('paymentAttachmentPreview');
+            const attInfo = $('paymentAttachmentInfo');
+            if (payment.attachment && attPreview && attInfo) {
+                attPreview.classList.remove('hidden');
+                attInfo.textContent = `${payment.attachment.name} (${Math.round((payment.attachment.size || 0)/1024)} KB)`;
+            } else if (attPreview) {
+                attPreview.classList.add('hidden');
+            }
+            const recurring = form.elements.recurring;
+            if (recurring) recurring.checked = !!payment.recurring;
+            const title = form.closest('.modal').querySelector('h2');
+            if (title) title.textContent = 'Editar pago';
+            const btn = form.querySelector('.btn-dark');
+            if (btn) btn.textContent = 'Guardar cambios';
+            const editSeriesField = $('editSeriesField');
+            if (editSeriesField) editSeriesField.style.display = payment.recurring ? '' : 'none';
+        }
+        openModal('paymentModal');
+        return;
+    }
     const id = e.target.dataset.delete;
     if (id) {
+        const payment = payments.find(item => item.id === id);
         const collection = userCollection('payments');
         try {
             if (collection) await collection.doc(id).delete();
-            payments = payments.filter(payment => payment.id !== id);
+            payments = payments.filter(item => item.id !== id);
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
             populateMonths();
             paymentFilters.page = 1;
             render();
+            showToast('Pago eliminado.', 'success', payment ? { label: 'Deshacer', onClick: async () => {
+                payments.push(payment);
+                localStorage.setItem('cartera_payments', JSON.stringify(payments));
+                if (collection && !String(payment.id).startsWith('local-')) {
+                    await collection.doc(payment.id).set(payment).catch(() => {});
+                }
+                populateMonths();
+                render();
+                showToast('Pago restaurado.', 'success');
+            } } : null);
         } catch (error) {
-            alert('No fue posible eliminar el pago.');
+            showToast('No fue posible eliminar el pago.', 'error');
         }
     }
 };
@@ -2028,9 +3086,96 @@ $('payments').onchange = async e => {
     const updated = await changePaymentStatus(payment, nextStatus);
     if (!updated) {
         statusSelect.value = previousStatus;
-        alert('No fue posible actualizar el estado del pago.');
+        showToast('No fue posible actualizar el estado del pago.', 'error');
     }
 };
+$('incomes').onclick = async e => {
+    const editId = e.target.dataset.editIncome;
+    if (editId) {
+        const income = incomes.find(item => item.id === editId);
+        if (!income) return;
+        editingIncomeId = editId;
+        setIncomeFormCategoryOptions();
+        const form = $('incomeForm');
+        if (form) {
+            form.elements.name.value = income.name || '';
+            form.elements.amount.value = formatMoneyInput(String(income.amount || ''));
+            form.elements.category.value = income.category || '';
+            form.elements.date.value = income.date || '';
+            form.elements.recurring.checked = !!income.recurring;
+            const title = form.closest('.modal').querySelector('h2');
+            if (title) title.textContent = 'Editar ingreso';
+            const btn = form.querySelector('.btn-dark');
+            if (btn) btn.textContent = 'Guardar cambios';
+        }
+        openModal('incomeModal');
+        return;
+    }
+    const id = e.target.dataset.deleteIncome;
+    if (!id) return;
+    const income = incomes.find(item => item.id === id);
+    incomes = incomes.filter(item => item.id !== id);
+    localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+    const collection = userCollection('incomes');
+    if (collection && income && !String(income.id).startsWith('local-')) {
+        await collection.doc(income.id).delete().catch(() => {});
+    }
+    renderIncomes();
+    showToast('Ingreso eliminado.', 'success', income ? { label: 'Deshacer', onClick: async () => {
+        incomes.push(income);
+        localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+        if (collection && !String(income.id).startsWith('local-')) await collection.doc(income.id).set(income).catch(() => {});
+        renderIncomes();
+        showToast('Ingreso restaurado.', 'success');
+    } } : null);
+};
+
+const incomeForm = $('incomeForm');
+if (incomeForm) {
+    incomeForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(incomeForm));
+        const income = {
+            id: `local-${Date.now()}`,
+            name: String(data.name || '').trim(),
+            amount: parseMoneyInput(data.amount),
+            currency: data.currency || appCurrency,
+            category: data.category || (categories[0] ? categories[0].name : 'Sin categoría'),
+            date: data.date || new Date().toISOString().slice(0, 10),
+            recurring: data.recurring === '1',
+            updatedAt: new Date().toISOString()
+        };
+        if (editingIncomeId) {
+            const idx = incomes.findIndex(i => i.id === editingIncomeId);
+            if (idx >= 0) {
+                incomes[idx] = { ...incomes[idx], name: income.name, amount: income.amount, category: income.category, date: income.date, recurring: income.recurring };
+                income.id = incomes[idx].id;
+            }
+            localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+            const collection = userCollection('incomes');
+            if (collection && !String(editingIncomeId).startsWith('local-')) {
+                await collection.doc(editingIncomeId).set(incomes[idx]).catch(() => {});
+            }
+            editingIncomeId = null;
+            closeModals();
+            renderIncomes();
+            showToast('Ingreso actualizado.', 'success');
+            return;
+        }
+        incomes.push(income);
+        localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+        const collection = userCollection('incomes');
+        if (collection) {
+            try {
+                await collection.doc(income.id).set(income);
+            } catch (err) { /* keep local */ }
+        }
+        closeModals();
+        renderIncomes();
+        showToast('Ingreso registrado.', 'success');
+    });
+}
+
 $('clearBtn').onclick = async () => {
     if (payments.length && confirm('¿Eliminar todos los pagos?')) {
         const collection = userCollection('payments');
@@ -2042,7 +3187,7 @@ $('clearBtn').onclick = async () => {
             paymentFilters.page = 1;
             render();
         } catch (error) {
-            alert('No fue posible eliminar todos los pagos.');
+            showToast('No fue posible eliminar todos los pagos.', 'error');
         }
     }
 };
@@ -2074,7 +3219,7 @@ function setActiveNav(buttonId) {
         button.classList.toggle('active', button.id === buttonId);
     });
 }
-const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'categoriesView', 'reportsView'];
+const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
 function showView(viewId) {
     APP_VIEWS.forEach(id => {
         const view = $(id);
@@ -2106,42 +3251,242 @@ document.addEventListener('click', event => {
 window.addEventListener('resize', () => {
     if (window.innerWidth >= 1024) setNavOpen(false);
 });
-$('summaryNav').onclick = () => {
+const navSummary = $('summaryNav'); if (navSummary) navSummary.onclick = () => {
     showView('summaryView');
     setActiveNav('summaryNav');
 };
-$('simulatorNav').onclick = () => {
+const navSimulator = $('simulatorNav'); if (navSimulator) navSimulator.onclick = () => {
     showView('simulatorView');
     setActiveNav('simulatorNav');
     updateSimulator();
     if (localStorage.getItem(simTourKey) !== 'done') setTimeout(simTourStart, 400);
 };
-$('savingsNav').onclick = () => {
+const navSavings = $('savingsNav'); if (navSavings) navSavings.onclick = () => {
     showView('savingsView');
     setActiveNav('savingsNav');
     updateSavingsSimulator();
+    renderSavingsGoals();
     if (localStorage.getItem(savingsTourKey) !== 'done') setTimeout(savingsTourStart, 400);
 };
+const addSavingsGoalBtn = $('addSavingsGoalBtn');
+if (addSavingsGoalBtn) addSavingsGoalBtn.onclick = () => {
+    const form = $('savingsGoalForm');
+    if (form) { form.reset(); form.elements.target.value = ''; form.elements.current.value = ''; }
+    openModal('savingsGoalModal');
+};
+const savingsGoalForm = $('savingsGoalForm');
+if (savingsGoalForm) {
+    savingsGoalForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(savingsGoalForm));
+        const goal = {
+            id: `local-${Date.now()}`,
+            name: String(data.name || '').trim(),
+            target: parseMoneyInput(data.target),
+            current: parseMoneyInput(data.current)
+        };
+        if (!goal.name || !goal.target) { showToast('Completa nombre y meta.', 'error'); return; }
+        savingsGoals.push(goal);
+        persistSavingsGoals();
+        closeModals();
+        renderSavingsGoals();
+        showToast('Meta creada.', 'success');
+    });
+}
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-delete-goal]');
+    if (!btn) return;
+    const id = btn.dataset.deleteGoal;
+    savingsGoals = savingsGoals.filter(g => g.id !== id);
+    persistSavingsGoals();
+    renderSavingsGoals();
+    showToast('Meta eliminada.', 'success');
+});
 $('simulatorToSavings').onclick = (event) => {
     event.preventDefault();
     showView('savingsView');
     setActiveNav('savingsNav');
     updateSavingsSimulator();
 };
-$('categoriesNav').onclick = () => {
+const navCategories = $('categoriesNav'); if (navCategories) navCategories.onclick = () => {
     showView('categoriesView');
     setActiveNav('categoriesNav');
 };
-$('balanceNav').onclick = () => {
+const navBalance = $('balanceNav'); if (navBalance) navBalance.onclick = () => {
     showView('balanceView');
     setActiveNav('balanceNav');
     renderBalance();
 };
-$('balanceExportBtn').onclick = exportData;
-$('manageBtn').onclick = () => {
-    showView('categoriesView');
-    setActiveNav('categoriesNav');
+const navIncome = $('incomeNav');
+if (navIncome) navIncome.onclick = () => {
+    showView('incomeView');
+    setActiveNav('incomeNav');
+    setIncomeFormCategoryOptions();
+    renderIncomes();
 };
+const navCharts = $('chartsNav');
+if (navCharts) navCharts.onclick = () => {
+    showView('chartsView');
+    setActiveNav('chartsNav');
+    renderCharts();
+};
+$('addIncomeBtn').onclick = () => {
+    editingIncomeId = null;
+    setIncomeFormCategoryOptions();
+    const form = $('incomeForm');
+    if (form) {
+        form.reset();
+        form.elements.date.value = new Date().toISOString().slice(0, 10);
+        form.elements.category.value = categories[0] ? categories[0].name : '';
+        const title = form.closest('.modal').querySelector('h2');
+        if (title) title.textContent = 'Registrar nuevo ingreso';
+        const btn = form.querySelector('.btn-dark');
+        if (btn) btn.textContent = 'Guardar ingreso';
+    }
+    openModal('incomeModal');
+};
+$('chartsPrintBtn').onclick = () => window.print();
+$('chartsPdfBtn').onclick = () => exportPdf('chartsView');
+$('chartsCsvBtn').onclick = exportChartsCsv;
+$('chartsBackupBtn').onclick = exportData;
+document.querySelectorAll('.charts-presets .chip').forEach(chip => {
+    chip.onclick = () => {
+        chartsApplyPreset(chip.dataset.chartRange || 'half');
+        syncChartsPresetHighlight();
+        renderCharts();
+    };
+});
+$('chartsFrom').onchange = () => {
+    chartsDateFrom = $('chartsFrom').value;
+    chartsRange = 'custom';
+    syncChartsPresetHighlight();
+    renderCharts();
+};
+$('chartsTo').onchange = () => {
+    chartsDateTo = $('chartsTo').value;
+    chartsRange = 'custom';
+    syncChartsPresetHighlight();
+    renderCharts();
+};
+$('chartsMonthSelect').onchange = event => {
+    chartsMonth = event.target.value;
+    renderCharts();
+};
+$('chartsFilterCategory').onchange = () => {
+    chartsFilters.category = $('chartsFilterCategory').value;
+    renderCharts();
+};
+$('chartsFilterStatus').onchange = () => {
+    chartsFilters.status = $('chartsFilterStatus').value;
+    renderCharts();
+};
+$('chartsFilterRecurring').onchange = () => {
+    chartsFilters.recurring = $('chartsFilterRecurring').checked;
+    renderCharts();
+};
+$('chartsFilterAmountFrom').oninput = () => {
+    chartsFilters.amountFrom = parseMoneyInput($('chartsFilterAmountFrom').value);
+    renderCharts();
+};
+$('chartsFilterAmountTo').oninput = () => {
+    chartsFilters.amountTo = parseMoneyInput($('chartsFilterAmountTo').value);
+    renderCharts();
+};
+$('chartsFilterClear').onclick = () => {
+    chartsFilters = { category:'', status:'', recurring:false, amountFrom:'', amountTo:'' };
+    $('chartsFilterCategory').value = '';
+    $('chartsFilterStatus').value = '';
+    $('chartsFilterRecurring').checked = false;
+    $('chartsFilterAmountFrom').value = '';
+    $('chartsFilterAmountTo').value = '';
+    chartsMonth = formatDateKey(new Date()).slice(0, 7);
+    renderCharts();
+};
+chartsApplyPreset('half');
+syncChartsPresetHighlight();
+$('balanceExportBtn').onclick = exportData;
+if ($('manageBtn')) {
+    $('manageBtn').onclick = () => {
+        showView('categoriesView');
+        setActiveNav('categoriesNav');
+    };
+}
+function updateConnectionStatus() {
+    const el = $('connStatus');
+    if (!el) return;
+    const online = navigator.onLine;
+    el.className = 'conn-status ' + (online ? 'is-online' : 'is-offline');
+    el.title = online ? 'En línea' : 'Sin conexión';
+}
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
+
+// Moneda principal selector
+const appCurrencySelect = $('appCurrencySelect');
+if (appCurrencySelect) {
+    appCurrencySelect.value = appCurrency;
+    appCurrencySelect.onchange = e => {
+        appCurrency = e.target.value;
+        localStorage.setItem('cartera_currency', appCurrency);
+        render();
+        if (typeof updateSimulator === 'function') updateSimulator();
+        if (typeof renderReports === 'function') renderReports();
+        if (typeof renderCharts === 'function') renderCharts();
+        showToast(`Moneda cambiada a ${appCurrency}.`, 'success');
+    };
+}
+
+// Comprobantes inputs y previews
+const paymentAttachmentInput = $('paymentAttachment');
+if (paymentAttachmentInput) {
+    paymentAttachmentInput.onchange = e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        selectedAttachmentFile = file;
+        $('paymentAttachmentPreview').classList.remove('hidden');
+        $('paymentAttachmentInfo').textContent = `${file.name} (${Math.round(file.size / 1024)} KB)`;
+    };
+}
+const paymentAttachmentRemove = $('paymentAttachmentRemove');
+if (paymentAttachmentRemove) {
+    paymentAttachmentRemove.onclick = () => {
+        selectedAttachmentFile = null;
+        if ($('paymentAttachment')) $('paymentAttachment').value = '';
+        $('paymentAttachmentPreview').classList.add('hidden');
+        $('paymentAttachmentInfo').textContent = '';
+        if (editingPaymentId) {
+            const p = payments.find(item => item.id === editingPaymentId);
+            if (p) p._removeAttachment = true;
+        }
+    };
+}
+
+// Ver comprobante click
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-view-receipt]');
+    if (!btn) return;
+    const p = payments.find(item => item.id === btn.dataset.viewReceipt);
+    if (!p || !p.attachment) return;
+    openReceiptModal(p);
+});
+
+// Push notification button & status
+const notifPushBtn = $('notifPushBtn');
+if (notifPushBtn) notifPushBtn.onclick = requestPushPermission;
+updatePushStatusUI();
+
+// Mes de presupuesto listener
+const catMonthSelect = $('categoryBudgetMonthSelect');
+if (catMonthSelect) {
+    catMonthSelect.onchange = e => {
+        selectedBudgetMonth = e.target.value;
+        renderCategoryTable();
+    };
+}
+
+window.addEventListener('online', flushSyncQueue);
+
 showView('summaryView');
 setActiveNav('summaryNav');
 document.querySelectorAll('[data-currency-input]').forEach(input => {
@@ -2180,9 +3525,277 @@ document.querySelectorAll('#savingsStepper .step').forEach(button => button.addE
 updateSavingsSimulator();
 goToSavingsStep(Number(savedSavingsPlan.step) || 1);
 localStorage.removeItem('cartera_palette');
-setTheme(localStorage.getItem('cartera_theme') === 'dark');
-$('categoryForm').elements.color.value = freeFormColor();
+const savedTheme = localStorage.getItem('cartera_theme');
+let initialDark;
+if (savedTheme) {
+    initialDark = savedTheme === 'dark';
+} else {
+    const hour = new Date().getHours();
+    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    initialDark = systemDark || (hour >= 19 || hour < 7);
+}
+setTheme(initialDark);
 renderColorPalette();
 render();
 syncRecurringPayments();
+
+/* ---------- Adjuntos / Recibos ---------- */
+async function uploadReceiptFile(file, paymentId) {
+    if (!file) return null;
+    if (storage && currentUser && currentUser.uid && !isLocalOnlySession(currentUser)) {
+        const ext = file.name.split('.').pop() || 'dat';
+        const storagePath = `users/${currentUser.uid}/receipts/${paymentId || Date.now()}_${Date.now()}.${ext}`;
+        const ref = storage.ref().child(storagePath);
+        const snapshot = await ref.put(file);
+        const url = await snapshot.ref.getDownloadURL();
+        return { name: file.name, url, path: storagePath, type: file.type, size: file.size };
+    } else {
+        return new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ name: file.name, url: reader.result, type: file.type, size: file.size, isLocal: true });
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
+    }
+}
+
+function openReceiptModal(payment) {
+    const att = payment.attachment;
+    if (!att) return;
+    $('receiptModalTitle').textContent = `Comprobante · ${payment.name}`;
+    const body = $('receiptPreviewBody');
+    const isImage = (att.type && att.type.startsWith('image/')) || /\.(png|jpe?g|webp|gif|svg)$/i.test(att.name || '');
+    if (isImage) {
+        body.innerHTML = `<img src="${escapeHtml(att.url)}" alt="Comprobante de ${escapeHtml(payment.name)}"><p class="eyebrow" style="margin-top:8px">${escapeHtml(att.name)} (${Math.round((att.size || 0)/1024)} KB)</p>`;
+    } else {
+        body.innerHTML = `<iframe src="${escapeHtml(att.url)}" title="Comprobante PDF"></iframe><p class="eyebrow" style="margin-top:8px">${escapeHtml(att.name)}</p>`;
+    }
+    const dl = $('receiptDownloadLink');
+    if (dl) {
+        dl.href = att.url;
+        dl.download = att.name || 'comprobante';
+    }
+    openModal('receiptModal');
+}
+
+/* ---------- Push Notifications ---------- */
+function updatePushStatusUI() {
+    const btn = $('notifPushBtn');
+    const desc = $('notifPushDesc');
+    if (!btn || !desc) return;
+    if (!('Notification' in window)) {
+        desc.textContent = 'Tu navegador no admite notificaciones del sistema.';
+        btn.hidden = true;
+        return;
+    }
+    if (Notification.permission === 'granted') {
+        desc.textContent = 'Notificaciones activadas. Recibirás avisos de vencimiento.';
+        btn.textContent = '✓ Activas';
+        btn.disabled = true;
+    } else if (Notification.permission === 'denied') {
+        desc.textContent = 'Permiso denegado en tu navegador.';
+        btn.textContent = 'Bloqueadas';
+        btn.disabled = true;
+    } else {
+        desc.textContent = 'Recibe avisos antes de que venzan tus pagos.';
+        btn.textContent = 'Activar';
+        btn.disabled = false;
+    }
+}
+
+async function requestPushPermission() {
+    if (!('Notification' in window)) {
+        showToast('Este navegador no soporta notificaciones.', 'error');
+        return;
+    }
+    try {
+        const permission = await Notification.requestPermission();
+        updatePushStatusUI();
+        if (permission === 'granted') {
+            showToast('Notificaciones activadas.', 'success');
+            registerFcmToken();
+            checkAndNotifyDuePayments(true);
+        } else {
+            showToast('Permiso de notificaciones no concedido.', 'info');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function registerFcmToken() {
+    try {
+        if (typeof firebase !== 'undefined' && firebase.messaging && typeof firebase.messaging.isSupported === 'function' && firebase.messaging.isSupported()) {
+            fcmMessaging = firebase.messaging();
+            const vapidKey = window.firebaseConfig && window.firebaseConfig.vapidKey;
+            const token = await fcmMessaging.getToken(vapidKey ? { vapidKey } : undefined);
+            if (token && currentUser && db) {
+                await db.collection('users').doc(currentUser.uid).collection('fcmTokens').doc(token).set({
+                    token,
+                    createdAt: new Date().toISOString(),
+                    userAgent: navigator.userAgent
+                }).catch(() => {});
+            }
+            fcmMessaging.onMessage(payload => {
+                const title = payload.notification?.title || 'Cartera | Recordatorio';
+                const body = payload.notification?.body || 'Tienes un nuevo aviso de pago.';
+                showToast(`${title}: ${body}`, 'info');
+                if (Notification.permission === 'granted') {
+                    navigator.serviceWorker?.ready.then(reg => reg.showNotification(title, { body, icon: '/assets/img/logo-mark.svg' }));
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('FCM opcional no configurado:', e.message);
+    }
+}
+
+function checkAndNotifyDuePayments(force) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const today = todayKey();
+    const lastNotified = localStorage.getItem('cartera_last_notif_date');
+    if (!force && lastNotified === today) return;
+
+    const dueTodayOrOverdue = payments.filter(p => {
+        if (getPaymentStatus(p) === 'pagado') return false;
+        const diff = p.date ? daysUntilDate(p.date) : null;
+        return diff !== null && diff <= 0;
+    });
+
+    if (dueTodayOrOverdue.length) {
+        localStorage.setItem('cartera_last_notif_date', today);
+        const count = dueTodayOrOverdue.length;
+        const title = `Cartera | ${count} pago${count === 1 ? '' : 's'} por atender`;
+        const body = count === 1
+            ? `“${dueTodayOrOverdue[0].name}” (${money(dueTodayOrOverdue[0].amount, dueTodayOrOverdue[0].currency)}) vence o está vencido.`
+            : `Tienes ${count} pagos pendientes o vencidos que requieren tu atención.`;
+
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then(reg => reg.showNotification(title, { body, icon: '/assets/img/logo-mark.svg' }));
+        } else {
+            try { new Notification(title, { body, icon: '/assets/img/logo-mark.svg' }); } catch (e) {}
+        }
+    }
+}
+
+/* ---------- Sincronización y resolución de conflictos ---------- */
+function updateSyncStatusUI(status, label) {
+    syncStatus = status || syncStatus;
+    const el = $('syncStatus');
+    if (!el) return;
+    el.className = `sync-status is-${syncStatus}`;
+    el.textContent = label || (syncStatus === 'synced' ? 'Sincronizado' : syncStatus === 'syncing' ? 'Sincronizando' : syncStatus === 'conflict' ? 'Conflicto resuelto' : 'Modo local');
+    el.title = `Estado de sincronización: ${el.textContent}`;
+}
+
+function mergeRecords(local, remote) {
+    const localTime = new Date(local.updatedAt || 0).getTime();
+    const remoteTime = new Date(remote.updatedAt || 0).getTime();
+    if (!local._dirty) return { merged: remote, conflict: false };
+    if (localTime > remoteTime) return { merged: local, conflict: false, pushRemote: true };
+    const merged = { ...remote };
+    let hasConflict = false;
+    if (local.status !== remote.status && local.status === 'pagado') merged.status = 'pagado';
+    if (local.amount !== remote.amount || local.name !== remote.name) hasConflict = true;
+    merged.updatedAt = new Date().toISOString();
+    delete merged._dirty;
+    return { merged, conflict: hasConflict, pushRemote: true };
+}
+
+function startRealtimeSync(user) {
+    if (!db || !user || String(user.email).startsWith('Modo local')) {
+        updateSyncStatusUI('offline', 'Modo local');
+        return;
+    }
+    firestoreUnsubscribers.forEach(unsub => { try { unsub(); } catch (e) {} });
+    firestoreUnsubscribers = [];
+
+    const userRef = db.collection('users').doc(user.uid);
+
+    const unsubPayments = userRef.collection('payments').onSnapshot(snapshot => {
+        let hasChanges = false;
+        let conflictDetected = false;
+        snapshot.docChanges().forEach(change => {
+            const data = { id: change.doc.id, ...change.doc.data() };
+            if (change.type === 'added' || change.type === 'modified') {
+                const idx = payments.findIndex(p => p.id === data.id);
+                if (idx >= 0) {
+                    const local = payments[idx];
+                    const { merged, conflict, pushRemote } = mergeRecords(local, data);
+                    payments[idx] = merged;
+                    if (conflict) conflictDetected = true;
+                    if (pushRemote) change.doc.ref.set(merged).catch(() => {});
+                    hasChanges = true;
+                } else {
+                    const localTempIdx = payments.findIndex(p => String(p.id).startsWith('local-') && p.name === data.name && p.date === data.date && Number(p.amount) === Number(data.amount));
+                    if (localTempIdx >= 0) {
+                        payments[localTempIdx] = data;
+                    } else if (!data.isDeleted) {
+                        payments.push(data);
+                    }
+                    hasChanges = true;
+                }
+            } else if (change.type === 'removed') {
+                payments = payments.filter(p => p.id !== change.doc.id);
+                hasChanges = true;
+            }
+        });
+        if (hasChanges) {
+            localStorage.setItem('cartera_payments', JSON.stringify(payments));
+            populateMonths();
+            render();
+        }
+        if (conflictDetected) {
+            updateSyncStatusUI('conflict', 'Conflicto resuelto');
+            showToast('Se sincronizaron cambios concurrentes desde la nube.', 'info');
+        } else {
+            lastSyncTimestamp = new Date().toISOString();
+            localStorage.setItem('cartera_last_sync', lastSyncTimestamp);
+            updateSyncStatusUI('synced', 'Sincronizado');
+        }
+    }, err => {
+        console.warn('Error en listener de pagos:', err);
+        updateSyncStatusUI('offline', 'Sin conexión');
+    });
+    firestoreUnsubscribers.push(unsubPayments);
+}
+
+async function flushSyncQueue() {
+    if (!navigator.onLine || !db || !currentUser || isLocalOnlySession(currentUser)) return;
+    updateSyncStatusUI('syncing', 'Sincronizando...');
+    const localPayments = payments.filter(p => String(p.id).startsWith('local-') || p._dirty);
+    const collection = userCollection('payments');
+    if (collection && localPayments.length) {
+        for (const p of localPayments) {
+            try {
+                const toSave = { ...p, updatedAt: new Date().toISOString() };
+                delete toSave._dirty;
+                if (String(p.id).startsWith('local-')) {
+                    const ref = await collection.add(toSave);
+                    p.id = ref.id;
+                } else {
+                    await collection.doc(p.id).set(toSave);
+                }
+                delete p._dirty;
+            } catch (e) {
+                console.warn('Error al subir pago pendiente:', e);
+            }
+        }
+        localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    }
+    updateSyncStatusUI('synced', 'Sincronizado');
+}
+
+window.addEventListener('error', event => { console.error('Error global:', event.error || event.message); });
+window.addEventListener('unhandledrejection', event => { console.error('Promise rechazada:', event.reason); });
+// Atajos de teclado
+document.addEventListener('keydown', event => {
+    const tag = (event.target && event.target.tagName) || '';
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if (event.key === 'Escape') { closeModals(); setNavOpen(false); return; }
+    if (typing || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'n' || event.key === 'N') { event.preventDefault(); openModal('paymentModal'); }
+    else if (event.key === '/') { event.preventDefault(); const s = $('paymentSearch'); if (s) s.focus(); }
+    else if (event.key === '?') { event.preventDefault(); showToast('Atajos: N nuevo pago · / buscar · Esc cerrar menú/modal', 'success'); }
+});
 
