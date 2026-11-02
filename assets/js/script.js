@@ -107,6 +107,7 @@ persistCategories();
 let paymentFilters = { from:'', to:'', category:'', status:'', search:'', page:1, pageSize: Number(localStorage.getItem('cartera_page_size') || 5), focusId:null };
 const selectedPayments = new Set();
 let editingPaymentId = null;
+let paymentSubmitLocked = false;
 let incomes = [];
 try { incomes = JSON.parse(localStorage.getItem('cartera_incomes') || '[]'); } catch (e) { incomes = []; }
 let editingIncomeId = null;
@@ -1686,6 +1687,18 @@ function nextMonthDate(dateKey) {
     const lastDay = new Date(nextYear, nextMonth, 0).getDate();
     return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
+function paymentRecordSignature(payment) {
+    if (!payment) return '';
+    return `${String(payment.name || '').trim().toLowerCase()}|${String(payment.category || '').trim().toLowerCase()}|${String(payment.date || '').trim()}|${Number(payment.amount || 0)}`;
+}
+function isExistingPaymentRecord(candidate, list = payments) {
+    if (!candidate) return false;
+    const signature = paymentRecordSignature(candidate);
+    return list.some(existing => {
+        if (!existing || existing.id === candidate.id) return false;
+        return paymentRecordSignature(existing) === signature;
+    });
+}
 async function syncRecurringPayments() {
     const currentMonth = todayKey().slice(0, 7);
     const collection = userCollection('payments');
@@ -1696,13 +1709,11 @@ async function syncRecurringPayments() {
         for (let guard = 0; guard < 60; guard += 1) {
             const next = nextMonthDate(date);
             if (!next || next.slice(0, 7) > currentMonth) break;
-            const exists = payments.some(payment =>
-                payment.name === seed.name &&
-                String(payment.category || '') === String(seed.category || '') &&
-                String(payment.date || '').slice(0, 7) === next.slice(0, 7));
+            const candidate = { name: seed.name, category: seed.category, amount: Number(seed.amount) || 0, date: next, status: 'pendiente', recurring: true };
+            const exists = isExistingPaymentRecord(candidate, payments);
             date = next;
             if (exists) continue;
-            const clone = { name: seed.name, category: seed.category, amount: Number(seed.amount) || 0, date: next, status: 'pendiente', recurring: true };
+            const clone = { ...candidate };
             if (collection && !String(seed.id).startsWith('local-')) {
                 try {
                     const ref = await collection.add(clone);
@@ -2348,6 +2359,13 @@ if ($('pageSizeSelect')) {
 }
 $('paymentForm').onsubmit = async e => {
     e.preventDefault();
+    if (paymentSubmitLocked) return;
+    paymentSubmitLocked = true;
+    const submitBtn = e.target.querySelector('.btn-dark');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = editingPaymentId ? 'Guardando...' : 'Guardando...';
+    }
     const collection = userCollection('payments');
     try {
         const data = Object.fromEntries(new FormData(e.target));
@@ -2409,6 +2427,16 @@ $('paymentForm').onsubmit = async e => {
             showToast('Pago actualizado.', 'success');
             return;
         }
+        const duplicate = isExistingPaymentRecord({
+            name: payment.name,
+            category: payment.category,
+            amount: payment.amount,
+            date: payment.date
+        }, payments);
+        if (duplicate) {
+            showToast('Ya existe un pago igual para esa fecha y concepto.', 'info');
+            return;
+        }
         if (!collection) {
             payments.push({ ...payment, id: `local-${Date.now()}` });
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
@@ -2425,6 +2453,15 @@ $('paymentForm').onsubmit = async e => {
         syncRecurringPayments();
     } catch (error) {
         showToast('No fue posible guardar el pago.', 'error');
+    } finally {
+        paymentSubmitLocked = false;
+        const form = $('paymentForm');
+        const activeBtn = form ? form.querySelector('.btn-dark') : null;
+        if (activeBtn) {
+            const editing = !!editingPaymentId;
+            activeBtn.disabled = false;
+            activeBtn.textContent = editing ? 'Guardar cambios' : 'Guardar pago';
+        }
     }
 };
 let editingCategoryId = null;
