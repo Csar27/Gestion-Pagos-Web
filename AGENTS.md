@@ -32,10 +32,10 @@ and runs an audit per width: elements outside the viewport, `document.scrollWidt
 interactive targets under 38px (touch range). Hit **▶ medir todo** for the full sweep.
 The app authenticates inside the iframe, so the audit runs against the real, logged-in views.
 
-Docker build (must run from the **parent** directory — the Dockerfile copies `Gestión Pagos/`):
+Docker build from the repo root:
 
 ```bash
-docker build -f "Gestión Pagos/Dockerfile" -t cartera-pagos .
+docker build -f Dockerfile -t cartera-pagos .
 docker run --rm -p 8080:80 cartera-pagos
 ```
 

@@ -29,4 +29,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
-        run: docker build -f "Gestión Pagos/Dockerfile" -t cartera-pagos .
+        run: docker build -f Dockerfile -t cartera-pagos .

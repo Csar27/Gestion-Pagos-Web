@@ -70,10 +70,10 @@ Después visita [http://localhost:8000](http://localhost:8000).
 
 ## Ejecución con Docker
 
-Como el `Dockerfile` copia la carpeta completa `Gestión Pagos/`, ejecuta el comando desde la carpeta padre:
+Desde la raíz del repositorio, puedes crear la imagen y servir la app:
 
 ```bash
-docker build -f "Gestión Pagos/Dockerfile" -t cartera-pagos .
+docker build -f Dockerfile -t cartera-pagos .
 docker run --rm -p 8080:80 cartera-pagos
 ```
 
