@@ -93,7 +93,7 @@ function hydrateLocalData() {
         }
         const savedPayments = JSON.parse(localStorage.getItem('cartera_payments') || '[]');
         if (Array.isArray(savedPayments)) {
-            payments = savedPayments.map(payment => ({ ...payment, status:getPaymentStatus(payment) }));
+            payments = dedupePayments(savedPayments.map(payment => ({ ...payment, status:getPaymentStatus(payment) })));
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
         }
     } catch (error) {
@@ -113,6 +113,9 @@ try { incomes = JSON.parse(localStorage.getItem('cartera_incomes') || '[]'); } c
 let editingIncomeId = null;
 let savingsGoals = [];
 try { savingsGoals = JSON.parse(localStorage.getItem('cartera_savings_goals') || '[]'); } catch (e) { savingsGoals = []; }
+const FINANCE_NOTES_KEY = 'cartera_finance_notes';
+let financialNotes = [];
+try { financialNotes = JSON.parse(localStorage.getItem(FINANCE_NOTES_KEY) || '[]'); } catch (error) { financialNotes = []; }
 const PAGE_SIZE = paymentFilters.pageSize || 5;
 const $ = id => document.getElementById(id);
 const SUPPORTED_CURRENCIES = {
@@ -1696,7 +1699,8 @@ function paymentRecordSignature(payment) {
     const category = normalizePaymentText(payment.category);
     const date = String(payment.date || '').trim();
     const amount = Number(payment.amount || 0);
-    return `${name}|${category}|${date}|${amount}`;
+    const currency = String(payment.currency || appCurrency || 'COP').toUpperCase();
+    return `${name}|${category}|${date}|${amount}|${currency}`;
 }
 function dedupePayments(list = []) {
     const unique = [];
@@ -2208,6 +2212,18 @@ $('reportFilterClear').onclick = () => {
     $('reportFilterAmountFrom').value = '';
     $('reportFilterAmountTo').value = '';
     renderReports();
+};
+const navCalculator = $('calculatorNav');
+if (navCalculator) navCalculator.onclick = () => {
+    showView('calculatorView');
+    setActiveNav('calculatorNav');
+    renderFinancialCalculator();
+};
+const navLabor = $('laborNav');
+if (navLabor) navLabor.onclick = () => {
+    showView('laborView');
+    setActiveNav('laborNav');
+    renderLaborSettlement();
 };
 const navImport = $('importNav'); if (navImport) navImport.onclick = () => openModal('importModal');
 $('importTemplateBtn').onclick = () => {
@@ -3279,7 +3295,7 @@ function setActiveNav(buttonId) {
         button.classList.toggle('active', button.id === buttonId);
     });
 }
-const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
+const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'calculatorView', 'laborView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
 function showView(viewId) {
     APP_VIEWS.forEach(id => {
         const view = $(id);
@@ -3848,6 +3864,372 @@ async function flushSyncQueue() {
 
 window.addEventListener('error', event => { console.error('Error global:', event.error || event.message); });
 window.addEventListener('unhandledrejection', event => { console.error('Promise rechazada:', event.reason); });
+// Atajos de teclado
+
+function formatAmountCOP(value) {
+    const numeric = Number(value) || 0;
+    return money(numeric, 'COP');
+}
+function setActiveCalculatorTab(tabName) {
+    document.querySelectorAll('.calculator-tab').forEach(button => {
+        button.classList.toggle('is-active', button.dataset.calcTab === tabName);
+    });
+    document.querySelectorAll('.calculator-panel').forEach(panel => {
+        panel.classList.toggle('is-active', panel.dataset.calcPanel === tabName);
+    });
+}
+function renderCalculatorNotes() {
+    const list = $('calculatorNotesList');
+    if (!list) return;
+    if (!financialNotes.length) {
+        list.innerHTML = '<li class="empty-note">Aún no guardas resultados.</li>';
+        return;
+    }
+    list.innerHTML = financialNotes.slice(0, 8).map(note => `
+        <li>
+            <div class="note-label">${escapeHtml(note.type === 'income' ? 'Ingreso estimado' : note.type === 'expense' ? 'Gasto estimado' : 'Nota')}</div>
+            <strong>${escapeHtml(note.label)}</strong>
+            <span>${escapeHtml(note.value)}</span>
+        </li>
+    `).join('');
+}
+function saveFinancialResult(type, label, value) {
+    const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        type,
+        label,
+        value,
+        createdAt: new Date().toISOString()
+    };
+    financialNotes.unshift(entry);
+    financialNotes = financialNotes.slice(0, 12);
+    localStorage.setItem(FINANCE_NOTES_KEY, JSON.stringify(financialNotes));
+    renderCalculatorNotes();
+    showToast('Resultado guardado en tus notas.', 'success');
+}
+function calculateSimpleInterest(capital, ratePercent, years) {
+    const principal = Number(capital) || 0;
+    const rate = Number(ratePercent) || 0;
+    const time = Number(years) || 0;
+    const interest = principal * (rate / 100) * time;
+    const total = principal + interest;
+    return { principal, rate, time, interest, total };
+}
+function calculateCompoundInterest(capital, ratePercent, periodsPerYear, years) {
+    const principal = Number(capital) || 0;
+    const rate = Number(ratePercent) || 0;
+    const periods = Number(periodsPerYear) || 1;
+    const time = Number(years) || 0;
+    const futureValue = principal * Math.pow(1 + (rate / 100) / periods, periods * time);
+    const totalInterest = futureValue - principal;
+    return { principal, rate, periods, time, futureValue, totalInterest };
+}
+function calculateLoanAmortization(principalAmount, annualRatePercent, totalMonths) {
+    const principal = Number(principalAmount) || 0;
+    const months = Math.max(1, Number(totalMonths) || 1);
+    const rate = Number(annualRatePercent) || 0;
+    const monthlyRate = rate / 100 / 12;
+    const monthlyPayment = principal === 0 ? 0 : (monthlyRate === 0 ? principal / months : principal * monthlyRate / (1 - Math.pow(1 + monthlyRate, -months)));
+    let balance = principal;
+    const schedule = [];
+    let totalInterest = 0;
+    let totalPaid = 0;
+    for (let month = 1; month <= months; month += 1) {
+        const interest = balance * monthlyRate;
+        const principalPayment = monthlyPayment - interest;
+        balance = Math.max(0, balance - principalPayment);
+        totalInterest += interest;
+        totalPaid += monthlyPayment;
+        schedule.push({ month, cuota: monthlyPayment, interest, principalPayment, balance });
+    }
+    return { monthlyPayment, totalPaid, totalInterest, schedule };
+}
+function calculateSavingsPlan(monthlyContribution, annualRatePercent, months) {
+    const contribution = Number(monthlyContribution) || 0;
+    const totalMonths = Math.max(1, Number(months) || 1);
+    const rate = Number(annualRatePercent) || 0;
+    const monthlyRate = rate / 100 / 12;
+    const futureValue = monthlyRate === 0
+        ? contribution * totalMonths
+        : contribution * (((Math.pow(1 + monthlyRate, totalMonths) - 1) / monthlyRate) * (1 + monthlyRate));
+    const totalContributed = contribution * totalMonths;
+    const totalInterest = futureValue - totalContributed;
+    return { contribution, rate, months: totalMonths, futureValue, totalContributed, totalInterest };
+}
+function calculateRateConversion({ eaValue, nominalValue, effectiveValue }) {
+    const ea = Number(eaValue) || 0;
+    const nominal = Number(nominalValue) || 0;
+    const effective = Number(effectiveValue) || 0;
+    if (ea) {
+        const effectiveMonthly = (Math.pow(1 + (ea / 100), 1 / 12) - 1) * 100;
+        const nominalMonthly = effectiveMonthly * 12;
+        return { ea, effectiveMonthly, nominalMonthly, nominal: nominalMonthly };
+    }
+    if (nominal) {
+        const effectiveMonthly = nominal / 12;
+        const annualEffective = (Math.pow(1 + (effectiveMonthly / 100), 12) - 1) * 100;
+        return { ea: annualEffective, effectiveMonthly, nominal };
+    }
+    if (effective) {
+        const annualEffective = (Math.pow(1 + (effective / 100), 12) - 1) * 100;
+        const nominalMonthly = ((Math.pow(1 + (effective / 100), 1 / 12) - 1) * 12) * 100;
+        return { ea: annualEffective, effectiveMonthly: effective, nominal: nominalMonthly };
+    }
+    return { ea: 0, effectiveMonthly: 0, nominal: 0 };
+}
+function clearCalculatorForm(formId) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.reset();
+    const resultBox = document.getElementById(formId.replace('Form', 'Result'));
+    if (resultBox) {
+        resultBox.classList.add('hidden');
+        resultBox.innerHTML = '';
+    }
+}
+function renderCalculatorResult(resultBoxId, title, stats, extraHtml) {
+    const box = document.getElementById(resultBoxId);
+    if (!box) return;
+    box.classList.remove('hidden');
+    const statsHtml = stats.map(stat => `<div class="calc-stat"><span>${escapeHtml(stat.label)}</span><strong>${escapeHtml(stat.value)}</strong></div>`).join('');
+    box.innerHTML = `<h3>${escapeHtml(title)}</h3><div class="calc-stat-grid">${statsHtml}</div>${extraHtml ? `<div class="calc-extra">${extraHtml}</div>` : ''}<div class="calc-result-actions"><button type="button" class="btn btn-light" data-save-calculator="note" data-save-label="${escapeHtml(title)}" data-save-value="${escapeHtml(stats[0].value)}">Guardar nota</button><button type="button" class="btn btn-light" data-save-calculator="expense" data-save-label="${escapeHtml(title)}" data-save-value="${escapeHtml(stats[0].value)}">Guardar gasto estimado</button><button type="button" class="btn btn-light" data-save-calculator="income" data-save-label="${escapeHtml(title)}" data-save-value="${escapeHtml(stats[0].value)}">Guardar ingreso estimado</button></div>`;
+}
+
+document.addEventListener('click', event => {
+    const tab = event.target.closest('.calculator-tab');
+    if (tab) {
+        setActiveCalculatorTab(tab.dataset.calcTab);
+        return;
+    }
+    const clearButton = event.target.closest('[data-calc-clear]');
+    if (clearButton) {
+        const formId = `${clearButton.dataset.calcClear}Form`;
+        clearCalculatorForm(formId);
+        return;
+    }
+    const saveButton = event.target.closest('[data-save-calculator]');
+    if (saveButton) {
+        const type = saveButton.dataset.saveCalculator || 'note';
+        const label = saveButton.dataset.saveLabel || 'Resultado financiero';
+        const value = saveButton.dataset.saveValue || '0';
+        saveFinancialResult(type, label, value);
+    }
+});
+
+document.getElementById('simpleInterestForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const capital = document.getElementById('simpleCapital').value;
+    const rate = document.getElementById('simpleRate').value;
+    const time = document.getElementById('simpleTime').value;
+    if (!capital || !rate || !time || Number(capital) < 0 || Number(rate) < 0 || Number(time) < 0) {
+        showToast('Ingresa valores válidos y no negativos para interés simple.', 'error');
+        return;
+    }
+    const result = calculateSimpleInterest(capital, rate, time);
+    renderCalculatorResult('simpleInterestResult', 'Interés simple', [
+        { label: 'Interés generado', value: formatAmountCOP(result.interest) },
+        { label: 'Monto final', value: formatAmountCOP(result.total) },
+        { label: 'Capital', value: formatAmountCOP(result.principal) }
+    ], '<p>Fórmula: I = C × r × t; Monto final = C + I.</p>');
+});
+
+document.getElementById('compoundInterestForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const capital = document.getElementById('compoundCapital').value;
+    const rate = document.getElementById('compoundRate').value;
+    const periods = document.getElementById('compoundPeriods').value;
+    const time = document.getElementById('compoundTime').value;
+    if (!capital || !rate || !time || Number(capital) < 0 || Number(rate) < 0 || Number(time) < 0) {
+        showToast('Ingresa valores válidos y no negativos para interés compuesto.', 'error');
+        return;
+    }
+    const result = calculateCompoundInterest(capital, rate, periods, time);
+    renderCalculatorResult('compoundInterestResult', 'Interés compuesto', [
+        { label: 'Valor futuro', value: formatAmountCOP(result.futureValue) },
+        { label: 'Total intereses', value: formatAmountCOP(result.totalInterest) },
+        { label: 'Capital', value: formatAmountCOP(result.principal) }
+    ], '<p>Fórmula: VF = C × (1 + r / n)^(n × t).</p>');
+});
+
+document.getElementById('loanInstallmentForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const principal = document.getElementById('loanAmount').value;
+    const rate = document.getElementById('loanRate').value;
+    const months = document.getElementById('loanMonths').value;
+    if (!principal || !rate || !months || Number(principal) < 0 || Number(rate) < 0 || Number(months) < 1) {
+        showToast('Completa monto, tasa y plazo válidos.', 'error');
+        return;
+    }
+    const result = calculateLoanAmortization(principal, rate, months);
+    const rows = result.schedule.slice(0, 6).map(item => `<tr><td>${item.month}</td><td>${formatAmountCOP(item.cuota)}</td><td>${formatAmountCOP(item.interest)}</td><td>${formatAmountCOP(item.principalPayment)}</td><td>${formatAmountCOP(item.balance)}</td></tr>`).join('');
+    renderCalculatorResult('loanInstallmentResult', 'Cuota de préstamo', [
+        { label: 'Cuota mensual', value: formatAmountCOP(result.monthlyPayment) },
+        { label: 'Total pagado', value: formatAmountCOP(result.totalPaid) },
+        { label: 'Total intereses', value: formatAmountCOP(result.totalInterest) }
+    ], `<table class="calc-amortization-table"><thead><tr><th>Mes</th><th>Cuota</th><th>Interés</th><th>Abono</th><th>Saldo</th></tr></thead><tbody>${rows || '<tr><td colspan="5">Sin amortización</td></tr>'}</tbody></table>`);
+});
+
+document.getElementById('savingsPlanForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const contribution = document.getElementById('savingsAmount').value;
+    const rate = document.getElementById('savingsRate').value;
+    const months = document.getElementById('savingsMonths').value;
+    if (!contribution || !rate || !months || Number(contribution) < 0 || Number(rate) < 0 || Number(months) < 1) {
+        showToast('Completa aporte mensual, tasa y tiempo válidos.', 'error');
+        return;
+    }
+    const result = calculateSavingsPlan(contribution, rate, months);
+    renderCalculatorResult('savingsPlanResult', 'Ahorro con aportes periódicos', [
+        { label: 'Valor futuro', value: formatAmountCOP(result.futureValue) },
+        { label: 'Aportes totales', value: formatAmountCOP(result.totalContributed) },
+        { label: 'Intereses acumulados', value: formatAmountCOP(result.totalInterest) }
+    ], '<p>Fórmula: VF = A × [((1 + i)^n - 1) / i] × (1 + i).</p>');
+});
+
+document.getElementById('rateConversionForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const ea = document.getElementById('rateEa').value;
+    const nominal = document.getElementById('rateNominal').value;
+    const effective = document.getElementById('rateEffective').value;
+    if (!ea && !nominal && !effective) {
+        showToast('Ingresa al menos una tasa para convertir.', 'error');
+        return;
+    }
+    const result = calculateRateConversion({ eaValue: ea, nominalValue: nominal, effectiveValue: effective });
+    renderCalculatorResult('rateConversionResult', 'Conversión de tasas', [
+        { label: 'EA', value: `${(Number(result.ea) || 0).toFixed(2)} %` },
+        { label: 'Nominal MV', value: `${(Number(result.nominal) || 0).toFixed(2)} %` },
+        { label: 'Efectiva mensual', value: `${(Number(result.effectiveMonthly) || 0).toFixed(2)} %` }
+    ], '<p>La conversión usa la relación entre tasa efectiva anual, nominal mes vencido y efectiva mensual.</p>');
+});
+
+function countBusinessDays(startDate, endDate) {
+    if (!startDate || !endDate) return 0;
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+    let count = 0;
+    const current = new Date(start);
+    while (current <= end) {
+        const day = current.getDay();
+        if (day !== 0 && day !== 6) count += 1;
+        current.setDate(current.getDate() + 1);
+    }
+    return count;
+}
+function calculateLaborSettlement(data) {
+    const salary = Number(data.monthlySalary || 0);
+    const startDate = data.startDate;
+    const endDate = data.endDate;
+    const minimumWage = Number(data.minimumWage || 0);
+    const transportAllowance = Number(data.transportAllowance || 0);
+    const workingDays = countBusinessDays(startDate, endDate) || 0;
+    const appliesTransport = salary <= (minimumWage * 2 || Number.MAX_SAFE_INTEGER);
+    const monthlyBase = salary + (appliesTransport ? transportAllowance : 0);
+    const cesantias = (monthlyBase * workingDays) / 360;
+    const interesesCesantias = (cesantias * workingDays * 0.12) / 360;
+    const prima = (monthlyBase * workingDays) / 360;
+    const vacationDays = Math.max(0, 15 - Number(data.vacationDaysTaken || 0));
+    const vacations = (salary * vacationDays) / 720;
+    const variableIncome = Number(data.variableIncome || 0);
+    let indemnizacion = 0;
+    let indemnizacionFormula = 'No aplica';
+    if (data.terminationReason === 'despido_sin_justa_causa' && data.contractType === 'indefinido') {
+        const yearsWorked = workingDays / 360;
+        const dayEquivalent = yearsWorked <= 1 ? 30 * yearsWorked : 30 + (20 * Math.max(0, yearsWorked - 1));
+        indemnizacion = salary * dayEquivalent;
+        indemnizacionFormula = `Indefinido: 30 días del primer año + 20 días por cada año posterior proporcional. ${dayEquivalent.toFixed(2)} días equivalentes.`;
+    } else if (data.terminationReason === 'despido_sin_justa_causa' && data.contractType === 'fijo') {
+        const remainingDays = Math.max(0, Math.round((workingDays || 0) * 0.5));
+        indemnizacion = (salary * remainingDays) / 30;
+        indemnizacionFormula = `Fijo: salario proporcional al tiempo restante del contrato: ${remainingDays} días respecto a 30 días del mes.`;
+    }
+    const totalConcepts = cesantias + interesesCesantias + prima + vacations;
+    const total = totalConcepts + indemnizacion + variableIncome;
+    return { workingDays, appliesTransport, monthlyBase, cesantias, interesesCesantias, prima, vacations, indemnizacion, indemnizacionFormula, variableIncome, totalConcepts, total };
+}
+function renderLaborSettlement() {
+    const resultBox = document.getElementById('laborSettlementResult');
+    if (!resultBox) return;
+    const startDate = document.getElementById('laborStartDate').value;
+    const endDate = document.getElementById('laborEndDate').value;
+    const salary = Number(document.getElementById('laborSalary').value || 0);
+    const minimumWage = Number(document.getElementById('laborMinWage').value || 0);
+    if (!startDate || !endDate || !salary || salary < 0 || minimumWage < 0) {
+        resultBox.className = 'labor-result-box empty-state-box';
+        resultBox.innerHTML = 'Completa la fecha de inicio, terminación, salario básico y salario mínimo vigente para calcular la liquidación.';
+        return;
+    }
+    if (new Date(`${endDate}T00:00:00`) < new Date(`${startDate}T00:00:00`)) {
+        resultBox.className = 'labor-result-box empty-state-box';
+        resultBox.innerHTML = 'La fecha de terminación debe ser igual o posterior a la fecha de inicio del contrato.';
+        return;
+    }
+    const result = calculateLaborSettlement({
+        startDate,
+        endDate,
+        monthlySalary: salary,
+        variableIncome: Number(document.getElementById('laborVariable').value || 0),
+        contractType: document.getElementById('laborContractType').value,
+        terminationReason: document.getElementById('laborTerminationReason').value,
+        vacationDaysTaken: Number(document.getElementById('laborVacationTaken').value || 0),
+        transportAllowance: Number(document.getElementById('laborTransportAllowance').value || 0),
+        minimumWage
+    });
+    const rows = [
+        { label: 'Cesantías', formula: '(Salario + auxilio si aplica) × días laborados / 360', value: result.cesantias },
+        { label: 'Intereses sobre cesantías', formula: 'Cesantías × días laborados × 12% / 360', value: result.interesesCesantias },
+        { label: 'Prima de servicios', formula: '(Salario + auxilio si aplica) × días del semestre trabajados / 360', value: result.prima },
+        { label: 'Vacaciones', formula: 'Salario básico × días pendientes / 720', value: result.vacations },
+        { label: 'Indemnización', formula: result.indemnizacionFormula, value: result.indemnizacion },
+        { label: 'Otros devengados variables', formula: 'Promedio de comisiones y horas extra', value: result.variableIncome }
+    ];
+    resultBox.className = 'labor-result-box';
+    resultBox.innerHTML = `
+        <h3>Resultado estimado</h3>
+        <div class="labor-summary-row"><span>Días laborados considerados</span><strong>${result.workingDays}</strong></div>
+        <div class="labor-summary-row"><span>Auxilio de transporte aplica</span><strong>${result.appliesTransport ? 'Sí' : 'No'}</strong></div>
+        <table class="labor-result-table"><thead><tr><th>Concepto</th><th>Fórmula</th><th style="text-align:right">Valor</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.label)}</td><td>${escapeHtml(row.formula)}</td><td style="text-align:right;font-weight:700;">${formatAmountCOP(row.value)}</td></tr>`).join('')}</tbody></table>
+        <div class="labor-total-box"><span>Total estimado a pagar</span><strong>${formatAmountCOP(result.total)}</strong></div>
+    `;
+}
+
+document.getElementById('laborSettlementForm').addEventListener('submit', event => {
+    event.preventDefault();
+    renderLaborSettlement();
+});
+document.getElementById('laborResetBtn').addEventListener('click', () => {
+    document.getElementById('laborSettlementForm').reset();
+    const box = document.getElementById('laborSettlementResult');
+    box.className = 'labor-result-box empty-state-box';
+    box.innerHTML = 'Completa el formulario para ver el desglose y el total estimado.';
+});
+document.getElementById('laborPrintBtn').addEventListener('click', () => window.print());
+document.getElementById('laborExportBtn').addEventListener('click', () => {
+    const resultBox = document.getElementById('laborSettlementResult');
+    if (!resultBox || resultBox.classList.contains('empty-state-box')) {
+        showToast('Primero calcula una liquidación para exportarla.', 'info');
+        return;
+    }
+    const summaryRows = [...document.querySelectorAll('.labor-result-table tbody tr')].map(row => row.innerText.split('\t').join(',').trim());
+    const total = document.querySelector('.labor-total-box strong')?.textContent || '0';
+    const csv = [
+        ['Concepto', 'Valor'],
+        ...summaryRows.map(row => row.split('\n').map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')),
+        ['Total estimado', total]
+    ].map(row => row.join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'liquidacion-laboral-colombia.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('Resumen exportado como CSV.', 'success');
+});
+
+renderCalculatorNotes();
+setActiveCalculatorTab('simpleInterest');
+
 // Atajos de teclado
 document.addEventListener('keydown', event => {
     const tag = (event.target && event.target.tagName) || '';
