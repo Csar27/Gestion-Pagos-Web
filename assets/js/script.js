@@ -344,7 +344,7 @@ async function loadUserData(user) {
             if (conflict) showToast('Se sincronizaron cambios concurrentes.', 'info');
         }
     }
-    payments = Array.from(mergedMap.values());
+    payments = dedupePayments(Array.from(mergedMap.values()));
     localStorage.setItem('cartera_payments', JSON.stringify(payments));
 
     // Ingresos: reconciliacion
@@ -1687,9 +1687,28 @@ function nextMonthDate(dateKey) {
     const lastDay = new Date(nextYear, nextMonth, 0).getDate();
     return `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
+function normalizePaymentText(value) {
+    return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
 function paymentRecordSignature(payment) {
     if (!payment) return '';
-    return `${String(payment.name || '').trim().toLowerCase()}|${String(payment.category || '').trim().toLowerCase()}|${String(payment.date || '').trim()}|${Number(payment.amount || 0)}`;
+    const name = normalizePaymentText(payment.name);
+    const category = normalizePaymentText(payment.category);
+    const date = String(payment.date || '').trim();
+    const amount = Number(payment.amount || 0);
+    return `${name}|${category}|${date}|${amount}`;
+}
+function dedupePayments(list = []) {
+    const unique = [];
+    const seen = new Set();
+    list.forEach(payment => {
+        if (!payment || !payment.name || !payment.date) return;
+        const signature = paymentRecordSignature(payment);
+        if (!signature || seen.has(signature)) return;
+        seen.add(signature);
+        unique.push(payment);
+    });
+    return unique;
 }
 function isExistingPaymentRecord(candidate, list = payments) {
     if (!candidate) return false;
@@ -1727,7 +1746,8 @@ async function syncRecurringPayments() {
             created += 1;
         }
     }
-    if (created) {
+    if (created || payments.length !== dedupePayments(payments).length) {
+        payments = dedupePayments(payments);
         localStorage.setItem('cartera_payments', JSON.stringify(payments));
         populateMonths();
         render();
@@ -2427,6 +2447,7 @@ $('paymentForm').onsubmit = async e => {
             showToast('Pago actualizado.', 'success');
             return;
         }
+        payments = dedupePayments(payments);
         const duplicate = isExistingPaymentRecord({
             name: payment.name,
             category: payment.category,
@@ -2439,10 +2460,12 @@ $('paymentForm').onsubmit = async e => {
         }
         if (!collection) {
             payments.push({ ...payment, id: `local-${Date.now()}` });
+            payments = dedupePayments(payments);
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
         } else {
             const ref = await collection.add(payment);
             payments.push({ ...payment, id: ref.id });
+            payments = dedupePayments(payments);
             localStorage.setItem('cartera_payments', JSON.stringify(payments));
         }
         populateMonths();
