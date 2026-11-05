@@ -75,20 +75,20 @@
                 </select>
             </div>
             <button id="themeBtn"><span class="nav-icon" id="themeIcon">☾</span><span id="themeLabel">Tema oscuro</span></button>
-        </nav>
-        <div class="profile-card">
-            <button class="profile-button" id="profileButton" type="button" aria-expanded="false" aria-controls="profileMenu">
-                <span class="profile-avatar" id="profileAvatar">I</span>
-                <span class="profile-meta">
-                    <strong id="profileName">Invitado</strong>
-                    <small id="profileRole">Invitado</small>
-                </span>
-                <span class="profile-chevron" aria-hidden="true">▾</span>
-            </button>
-            <div class="profile-menu hidden" id="profileMenu" role="menu" aria-label="Menú de perfil">
-                <button type="button" class="profile-menu-item" id="profileLogoutBtn">Cerrar sesión</button>
+            <div class="profile-card">
+                <button class="profile-button" id="profileButton" type="button" aria-expanded="false" aria-controls="profileMenu">
+                    <span class="profile-avatar" id="profileAvatar">I</span>
+                    <span class="profile-meta">
+                        <strong id="profileName">Invitado</strong>
+                        <small id="profileRole">Invitado</small>
+                    </span>
+                    <span class="profile-chevron" aria-hidden="true">▾</span>
+                </button>
+                <div class="profile-menu hidden" id="profileMenu" role="menu" aria-label="Menú de perfil">
+                    <button type="button" class="profile-menu-item" id="profileLogoutBtn">Cerrar sesión</button>
+                </div>
             </div>
-        </div>
+        </nav>
     </aside>
     <main id="mainContent">
         <div id="summaryView">
@@ -877,7 +877,7 @@
 
 <script src="assets/js/script.js?v=20261104-icons"></script>
 <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
-<div class="save-indicator" id="saveIndicator">Guardando…</div>
+<div class="save-indicator" id="saveIndicator"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
