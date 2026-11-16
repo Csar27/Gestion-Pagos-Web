@@ -45,7 +45,7 @@ docker run --rm -p 8080:80 cartera-pagos
 - **Firebase via CDN**: compat libraries loaded from `gstatic.com` (v10.12.2) in `index.html`, plus `config/firebase-config.js`. Not installed via npm.
 - **localStorage-first**: payments, categories, theme, and page size persist in `localStorage`; Firestore acts as a per-user sync layer, not the primary store. On load, `hydrateLocalData()` runs first and Firestore fills in afterwards (`loadUserData()`).
 - **Auth**: Google sign-in only (the README mentions email/password but the UI only exposes Google). Without valid Firebase config the app falls back to a local "Modo local" session.
-- **Views**: `#summaryView`, `#simulatorView`, `#savingsView`, `#balanceView`, `#incomeView`, `#categoriesView`, `#reportsView`, `#chartsView` — toggled via the `hidden` class. `#authScreen` gates the whole `.app`. Nav buttons call `showView()` + `setActiveNav()`.
+- **Views**: `#summaryView`, `#simulatorView`, `#savingsView`, `#balanceView`, `#incomeView`, `#calculatorView`, `#laborView`, `#primaView`, `#categoriesView`, `#reportsView`, `#chartsView` — toggled via the `hidden` class. `#authScreen` gates the whole `.app`. Nav buttons call `showView()` + `setActiveNav()`.
 - **Responsive (mobile-first)**: base CSS targets a 320px phone and the cascade scales up through `@media (min-width:600px / 768px / 1024px / 1440px / 1920px)` at the end of `style.css` (there are **no** `max-width` queries). **Below 1024px** the sidebar becomes a top bar with a hamburger button (`#navToggle`) that expands `#sideNav` vertically (`aside.nav-open`); the session/logout block (`.side-bottom`) lives inside that menu on mobile and in the sidebar from 1024px up. Above 1024px the layout is `grid-template-columns:250px minmax(0,1fr)` with a static sidebar.
 - **Cache busting**: CSS/JS are loaded with a `?v=` query param (currently `?v=20261101-design5`). **Bump it in `index.html` (3 places: stylesheet, script, favicon) on every ship** — otherwise users keep stale assets.
 
@@ -89,6 +89,7 @@ docker run --rm -p 8080:80 cartera-pagos
 
 - All user-facing text is in Spanish (including tour steps, notifications, and validation messages).
 - Currency is Colombian pesos (COP) — formatting logic is in `script.js` (`money()`).
+- Monetary inputs use `data-currency-input` for live locale-aware grouping; payment and income amounts follow their own currency selector.
 - Payment statuses: `pagado`, `no_pagado`, `pendiente`.
 - Category colors are normalized to avoid duplicates; `persistCategories()` handles dedup and Firestore sync.
 - CSV files are the app's interchange format: keep the header `Concepto,Categoria,Fecha,Estado,Importe,Recurrente` in sync between `exportData()` and `importData()`.

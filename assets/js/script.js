@@ -177,14 +177,51 @@ function getCategoryBudget(category, monthKey) {
 }
 
 
-const formatMoneyInput = value => {
-    const digitsOnly = String(value ?? '').replace(/[^\d]/g, '');
-    if (!digitsOnly) return '';
-    const numeric = Number(digitsOnly);
-    if (!Number.isFinite(numeric)) return '';
-    return new Intl.NumberFormat('es-CO',{maximumFractionDigits:0}).format(numeric);
+const currencyInputInfo = currencyCode => SUPPORTED_CURRENCIES[String(currencyCode || appCurrency || 'COP').toUpperCase()] || SUPPORTED_CURRENCIES.COP;
+const currencyForInput = input => input && input.dataset.localCurrency
+    ? ($(input.dataset.localCurrency) || {}).value || appCurrency
+    : appCurrency;
+const currencyInputSeparators = currencyCode => {
+    const info = currencyInputInfo(currencyCode);
+    const parts = new Intl.NumberFormat(info.locale, { minimumFractionDigits:1, maximumFractionDigits:1 }).formatToParts(1.1);
+    return {
+        group:parts.find(part => part.type === 'group')?.value || ',',
+        decimal:parts.find(part => part.type === 'decimal')?.value || '.'
+    };
 };
-const parseMoneyInput = value => Number(String(value ?? '').replace(/\./g, '').replace(/,/g, '').replace(/[^\d-]/g, '')) || 0;
+const parseMoneyInput = (value, currencyCode) => {
+    const info = currencyInputInfo(currencyCode);
+    const raw = String(value ?? '').trim().replace(/[^\d,.-]/g, '');
+    if (!raw || raw === '-') return 0;
+    const negative = raw.startsWith('-');
+    const unsigned = raw.replace(/-/g, '');
+    if (!info.decimals) {
+        const integer = unsigned.replace(/\D/g, '');
+        return (negative ? -1 : 1) * (Number(integer) || 0);
+    }
+    const { decimal } = currencyInputSeparators(currencyCode);
+    const decimalIndex = unsigned.lastIndexOf(decimal);
+    const integer = (decimalIndex < 0 ? unsigned : unsigned.slice(0, decimalIndex)).replace(/\D/g, '');
+    const fraction = decimalIndex < 0 ? '' : unsigned.slice(decimalIndex + decimal.length).replace(/\D/g, '').slice(0, info.decimals);
+    const numeric = `${negative ? '-' : ''}${integer || '0'}${fraction ? `.${fraction}` : ''}`;
+    return Number(numeric) || 0;
+};
+const formatMoneyInput = (value, currencyCode) => {
+    const info = currencyInputInfo(currencyCode);
+    const raw = String(value ?? '').trim();
+    if (!raw || raw === '-') return '';
+    const { decimal } = currencyInputSeparators(currencyCode);
+    const hasTrailingDecimal = info.decimals > 0 && raw.endsWith(decimal);
+    const parsed = typeof value === 'number' ? value : parseMoneyInput(raw, currencyCode);
+    const numeric = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    let formatted = new Intl.NumberFormat(info.locale, { useGrouping:'always', maximumFractionDigits:info.decimals }).format(numeric);
+    if (hasTrailingDecimal && !formatted.includes(decimal)) formatted += decimal;
+    return formatted;
+};
+function updatePrimaCurrencyPlaceholder() {
+    const salaryInput = $('primaSalary');
+    if (salaryInput) salaryInput.placeholder = `Ej. ${formatMoneyInput(2800000, appCurrency)}`;
+}
 const authScreen = $('authScreen'), app = document.querySelector('.app');
 const firebaseReady = !!(window.firebaseConfig && !Object.values(window.firebaseConfig).some(value => String(value).startsWith('TU_'))) && location.protocol !== 'file:';
 const guestUser = { email:'Invitado', uid:'guest-user', displayName:'Invitado', isGuest:true };
@@ -1646,7 +1683,7 @@ async function importData(text) {
     rows.forEach(row => {
         const name = String(cell(row, 'name') || '').trim();
         const date = findImportDate(cell(row, 'date'));
-        const amount = parseMoneyInput(cell(row, 'amount'));
+        const amount = parseMoneyInput(cell(row, 'amount'), 'COP');
         if (!name || !date || !amount || amount <= 0) { skipped += 1; return; }
         const duplicated = payments.some(payment => payment.name === name && String(payment.date) === date && Number(payment.amount) === amount);
         if (duplicated) { skipped += 1; return; }
@@ -1931,7 +1968,7 @@ function updateSimulator() {
         </div>`).join('')
         : '<p class="savings-tip">Aún no registras pagos este mes: añade tu primer pago para ver cómo se reparte tu gasto.</p>';
 
-    localStorage.setItem('cartera_simulator', JSON.stringify({ income: incomeInput.value }));
+    localStorage.setItem('cartera_simulator', JSON.stringify({ income, currency:appCurrency }));
 }
 const SAVINGS_TOTAL_STEPS = 4;
 const savingsStorageKey = 'cartera_savings_plan';
@@ -2053,9 +2090,10 @@ function goToSavingsStep(step) {
 function saveSavingsPlan() {
     localStorage.setItem(savingsStorageKey, JSON.stringify({
         name: $('savingsName').value,
-        goal: $('savingsGoal').value,
-        current: $('savingsCurrent').value,
-        monthly: $('savingsMonthly').value,
+        goal: parseMoneyInput($('savingsGoal').value),
+        current: parseMoneyInput($('savingsCurrent').value),
+        monthly: parseMoneyInput($('savingsMonthly').value),
+        currency:appCurrency,
         mode: savingsMode(),
         target: $('savingsTargetDate').value,
         step: savingsStep
@@ -2217,13 +2255,17 @@ const navCalculator = $('calculatorNav');
 if (navCalculator) navCalculator.onclick = () => {
     showView('calculatorView');
     setActiveNav('calculatorNav');
-    renderFinancialCalculator();
 };
 const navLabor = $('laborNav');
 if (navLabor) navLabor.onclick = () => {
     showView('laborView');
     setActiveNav('laborNav');
     renderLaborSettlement();
+};
+const navPrima = $('primaNav');
+if (navPrima) navPrima.onclick = () => {
+    showView('primaView');
+    setActiveNav('primaNav');
 };
 const navImport = $('importNav'); if (navImport) navImport.onclick = () => openModal('importModal');
 $('importTemplateBtn').onclick = () => {
@@ -2410,7 +2452,7 @@ $('paymentForm').onsubmit = async e => {
         const payment = {
             ...data,
             status: getPaymentStatus(data),
-            amount: parseMoneyInput(data.amount),
+            amount: parseMoneyInput(data.amount, data.currency || appCurrency),
             currency: data.currency || appCurrency,
             updatedAt: new Date().toISOString()
         };
@@ -3099,11 +3141,12 @@ $('payments').onclick = async e => {
         const form = $('paymentForm');
         if (form) {
             form.elements.name.value = payment.name || '';
-            form.elements.amount.value = formatMoneyInput(String(payment.amount || ''));
+            if (form.elements.currency) form.elements.currency.value = payment.currency || appCurrency;
+            form.elements.amount.value = formatMoneyInput(payment.amount || 0, payment.currency || appCurrency);
+            form.elements.amount.dataset.formattedCurrency = payment.currency || appCurrency;
             form.elements.category.value = payment.category || '';
             form.elements.date.value = payment.date || '';
             form.elements.status.value = getPaymentStatus(payment);
-            if (form.elements.currency) form.elements.currency.value = payment.currency || appCurrency;
             delete payment._removeAttachment;
             selectedAttachmentFile = null;
             const attPreview = $('paymentAttachmentPreview');
@@ -3175,7 +3218,9 @@ $('incomes').onclick = async e => {
         const form = $('incomeForm');
         if (form) {
             form.elements.name.value = income.name || '';
-            form.elements.amount.value = formatMoneyInput(String(income.amount || ''));
+            if (form.elements.currency) form.elements.currency.value = income.currency || appCurrency;
+            form.elements.amount.value = formatMoneyInput(income.amount || 0, income.currency || appCurrency);
+            form.elements.amount.dataset.formattedCurrency = income.currency || appCurrency;
             form.elements.category.value = income.category || '';
             form.elements.date.value = income.date || '';
             form.elements.recurring.checked = !!income.recurring;
@@ -3214,7 +3259,7 @@ if (incomeForm) {
         const income = {
             id: `local-${Date.now()}`,
             name: String(data.name || '').trim(),
-            amount: parseMoneyInput(data.amount),
+            amount: parseMoneyInput(data.amount, data.currency || appCurrency),
             currency: data.currency || appCurrency,
             category: data.category || (categories[0] ? categories[0].name : 'Sin categoría'),
             date: data.date || new Date().toISOString().slice(0, 10),
@@ -3224,7 +3269,7 @@ if (incomeForm) {
         if (editingIncomeId) {
             const idx = incomes.findIndex(i => i.id === editingIncomeId);
             if (idx >= 0) {
-                incomes[idx] = { ...incomes[idx], name: income.name, amount: income.amount, category: income.category, date: income.date, recurring: income.recurring };
+                incomes[idx] = { ...incomes[idx], name: income.name, amount: income.amount, currency:income.currency, category: income.category, date: income.date, recurring: income.recurring };
                 income.id = incomes[idx].id;
             }
             localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
@@ -3295,7 +3340,7 @@ function setActiveNav(buttonId) {
         button.classList.toggle('active', button.id === buttonId);
     });
 }
-const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'calculatorView', 'laborView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
+const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'calculatorView', 'laborView', 'primaView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
 function showView(viewId) {
     APP_VIEWS.forEach(id => {
         const view = $(id);
@@ -3503,10 +3548,20 @@ const appCurrencySelect = $('appCurrencySelect');
 if (appCurrencySelect) {
     appCurrencySelect.value = appCurrency;
     appCurrencySelect.onchange = e => {
+        const inputValues = [...document.querySelectorAll('[data-currency-input]:not([data-local-currency])')].map(input => ({
+            input,
+            value:parseMoneyInput(input.value, appCurrency)
+        }));
         appCurrency = e.target.value;
         localStorage.setItem('cartera_currency', appCurrency);
+        updatePrimaCurrencyPlaceholder();
+        inputValues.forEach(({ input, value }) => {
+            input.value = formatMoneyInput(value, appCurrency);
+        });
         render();
+        if (!$('primaView').classList.contains('hidden') && !$('primaResult').classList.contains('empty-state-box')) renderServiceBonus();
         if (typeof updateSimulator === 'function') updateSimulator();
+        if (typeof updateSavingsSimulator === 'function') updateSavingsSimulator();
         if (typeof renderReports === 'function') renderReports();
         if (typeof renderCharts === 'function') renderCharts();
         showToast(`Moneda cambiada a ${appCurrency}.`, 'success');
@@ -3565,14 +3620,33 @@ window.addEventListener('online', flushSyncQueue);
 
 showView('summaryView');
 setActiveNav('summaryNav');
+updatePrimaCurrencyPlaceholder();
 document.querySelectorAll('[data-currency-input]').forEach(input => {
+    input.dataset.formattedCurrency = currencyForInput(input);
     input.addEventListener('input', () => {
-        const formatted = formatMoneyInput(input.value);
-        input.value = formatted;
+        const currency = currencyForInput(input);
+        input.value = formatMoneyInput(input.value, currency);
+        input.dataset.formattedCurrency = currency;
+    });
+});
+['paymentCurrency', 'incomeCurrency'].forEach(currencySelectId => {
+    const currencySelect = $(currencySelectId);
+    if (!currencySelect) return;
+    currencySelect.addEventListener('change', () => {
+        const amountInput = document.querySelector(`[data-local-currency="${currencySelectId}"]`);
+        if (!amountInput) return;
+        const previousCurrency = amountInput.dataset.formattedCurrency || appCurrency;
+        if (amountInput.value.trim()) {
+            const amount = parseMoneyInput(amountInput.value, previousCurrency);
+            amountInput.value = formatMoneyInput(amount, currencySelect.value);
+        }
+        amountInput.dataset.formattedCurrency = currencySelect.value;
     });
 });
 const savedSimulator = JSON.parse(localStorage.getItem('cartera_simulator') || '{}');
-$('simulatorIncome').value = savedSimulator.income || '';
+$('simulatorIncome').value = savedSimulator.income
+    ? formatMoneyInput(typeof savedSimulator.income === 'number' ? savedSimulator.income : parseMoneyInput(savedSimulator.income, savedSimulator.currency || appCurrency))
+    : '';
 $('simulateBtn').onclick = updateSimulator;
 $('simulatorRefreshBtn').onclick = () => {
     render();
@@ -3582,9 +3656,10 @@ $('simulatorRefreshBtn').onclick = () => {
 updateSimulator();
 const savedSavingsPlan = JSON.parse(localStorage.getItem(savingsStorageKey) || '{}');
 $('savingsName').value = savedSavingsPlan.name || '';
-$('savingsGoal').value = savedSavingsPlan.goal || '';
-$('savingsCurrent').value = savedSavingsPlan.current || '';
-$('savingsMonthly').value = savedSavingsPlan.monthly || '';
+const savedSavingsCurrency = savedSavingsPlan.currency || appCurrency;
+$('savingsGoal').value = savedSavingsPlan.goal ? formatMoneyInput(typeof savedSavingsPlan.goal === 'number' ? savedSavingsPlan.goal : parseMoneyInput(savedSavingsPlan.goal, savedSavingsCurrency)) : '';
+$('savingsCurrent').value = savedSavingsPlan.current ? formatMoneyInput(typeof savedSavingsPlan.current === 'number' ? savedSavingsPlan.current : parseMoneyInput(savedSavingsPlan.current, savedSavingsCurrency)) : '';
+$('savingsMonthly').value = savedSavingsPlan.monthly ? formatMoneyInput(typeof savedSavingsPlan.monthly === 'number' ? savedSavingsPlan.monthly : parseMoneyInput(savedSavingsPlan.monthly, savedSavingsCurrency)) : '';
 $('savingsTargetDate').value = savedSavingsPlan.target || '';
 if (savedSavingsPlan.mode === 'date') {
     const dateModeRadio = document.querySelector('input[name="savingsMode"][value="date"]');
@@ -4018,7 +4093,7 @@ document.addEventListener('click', event => {
 
 document.getElementById('simpleInterestForm').addEventListener('submit', event => {
     event.preventDefault();
-    const capital = document.getElementById('simpleCapital').value;
+    const capital = parseMoneyInput(document.getElementById('simpleCapital').value);
     const rate = document.getElementById('simpleRate').value;
     const time = document.getElementById('simpleTime').value;
     if (!capital || !rate || !time || Number(capital) < 0 || Number(rate) < 0 || Number(time) < 0) {
@@ -4035,7 +4110,7 @@ document.getElementById('simpleInterestForm').addEventListener('submit', event =
 
 document.getElementById('compoundInterestForm').addEventListener('submit', event => {
     event.preventDefault();
-    const capital = document.getElementById('compoundCapital').value;
+    const capital = parseMoneyInput(document.getElementById('compoundCapital').value);
     const rate = document.getElementById('compoundRate').value;
     const periods = document.getElementById('compoundPeriods').value;
     const time = document.getElementById('compoundTime').value;
@@ -4053,7 +4128,7 @@ document.getElementById('compoundInterestForm').addEventListener('submit', event
 
 document.getElementById('loanInstallmentForm').addEventListener('submit', event => {
     event.preventDefault();
-    const principal = document.getElementById('loanAmount').value;
+    const principal = parseMoneyInput(document.getElementById('loanAmount').value);
     const rate = document.getElementById('loanRate').value;
     const months = document.getElementById('loanMonths').value;
     if (!principal || !rate || !months || Number(principal) < 0 || Number(rate) < 0 || Number(months) < 1) {
@@ -4071,7 +4146,7 @@ document.getElementById('loanInstallmentForm').addEventListener('submit', event 
 
 document.getElementById('savingsPlanForm').addEventListener('submit', event => {
     event.preventDefault();
-    const contribution = document.getElementById('savingsAmount').value;
+    const contribution = parseMoneyInput(document.getElementById('savingsAmount').value);
     const rate = document.getElementById('savingsRate').value;
     const months = document.getElementById('savingsMonths').value;
     if (!contribution || !rate || !months || Number(contribution) < 0 || Number(rate) < 0 || Number(months) < 1) {
@@ -4153,8 +4228,8 @@ function renderLaborSettlement() {
     if (!resultBox) return;
     const startDate = document.getElementById('laborStartDate').value;
     const endDate = document.getElementById('laborEndDate').value;
-    const salary = Number(document.getElementById('laborSalary').value || 0);
-    const minimumWage = Number(document.getElementById('laborMinWage').value || 0);
+    const salary = parseMoneyInput(document.getElementById('laborSalary').value);
+    const minimumWage = parseMoneyInput(document.getElementById('laborMinWage').value);
     if (!startDate || !endDate || !salary || salary < 0 || minimumWage < 0) {
         resultBox.className = 'labor-result-box empty-state-box';
         resultBox.innerHTML = 'Completa la fecha de inicio, terminación, salario básico y salario mínimo vigente para calcular la liquidación.';
@@ -4169,11 +4244,11 @@ function renderLaborSettlement() {
         startDate,
         endDate,
         monthlySalary: salary,
-        variableIncome: Number(document.getElementById('laborVariable').value || 0),
+        variableIncome: parseMoneyInput(document.getElementById('laborVariable').value),
         contractType: document.getElementById('laborContractType').value,
         terminationReason: document.getElementById('laborTerminationReason').value,
         vacationDaysTaken: Number(document.getElementById('laborVacationTaken').value || 0),
-        transportAllowance: Number(document.getElementById('laborTransportAllowance').value || 0),
+        transportAllowance: parseMoneyInput(document.getElementById('laborTransportAllowance').value),
         minimumWage
     });
     const rows = [
@@ -4193,6 +4268,60 @@ function renderLaborSettlement() {
         <div class="labor-total-box"><span>Total estimado a pagar</span><strong>${formatAmountCOP(result.total)}</strong></div>
     `;
 }
+
+function calculateServiceBonus(data) {
+    const salary = Number(data.monthlySalary);
+    const transportAllowance = Number(data.transportAllowance || 0);
+    const variableIncome = Number(data.variableIncome || 0);
+    const workingDays = Number(data.workingDays);
+    if (!Number.isFinite(salary) || salary <= 0) throw new Error('Ingresa un salario mensual válido.');
+    if (!Number.isFinite(transportAllowance) || transportAllowance < 0) throw new Error('El auxilio de transporte no puede ser negativo.');
+    if (!Number.isFinite(variableIncome) || variableIncome < 0) throw new Error('El promedio de salario variable no puede ser negativo.');
+    if (!Number.isInteger(workingDays) || workingDays < 1 || workingDays > 180) throw new Error('Los días trabajados deben estar entre 1 y 180.');
+    const monthlyBase = salary + transportAllowance + variableIncome;
+    return { salary, transportAllowance, variableIncome, workingDays, monthlyBase, bonus:monthlyBase * workingDays / 360 };
+}
+function renderServiceBonus() {
+    const resultBox = $('primaResult');
+    const form = $('primaForm');
+    if (!form.reportValidity()) return;
+    try {
+        const result = calculateServiceBonus({
+            monthlySalary:parseMoneyInput($('primaSalary').value),
+            transportAllowance:parseMoneyInput($('primaTransport').value),
+            variableIncome:parseMoneyInput($('primaVariable').value),
+            workingDays:$('primaDays').value
+        });
+        resultBox.className = 'prima-result';
+        resultBox.innerHTML = `
+            <div class="prima-estimate">
+                <span>Prima estimada</span>
+                <strong>${money(result.bonus, appCurrency)}</strong>
+                <small>Por ${result.workingDays} días trabajados</small>
+            </div>
+            <div class="prima-breakdown">
+                <div class="labor-summary-row"><span>Salario mensual básico</span><strong>${money(result.salary, appCurrency)}</strong></div>
+                <div class="labor-summary-row"><span>Auxilio de transporte</span><strong>${money(result.transportAllowance, appCurrency)}</strong></div>
+                <div class="labor-summary-row"><span>Promedio salarial variable</span><strong>${money(result.variableIncome, appCurrency)}</strong></div>
+                <div class="labor-summary-row"><span>Base mensual para el cálculo</span><strong>${money(result.monthlyBase, appCurrency)}</strong></div>
+            </div>
+            <p class="prima-formula">Fórmula: (salario mensual + auxilio si aplica + promedio variable) × días trabajados / 360.</p>
+        `;
+    } catch (error) {
+        resultBox.className = 'prima-result empty-state-box';
+        resultBox.textContent = error.message;
+    }
+}
+
+document.getElementById('primaForm').addEventListener('submit', event => {
+    event.preventDefault();
+    renderServiceBonus();
+});
+document.getElementById('primaForm').addEventListener('reset', () => {
+    const resultBox = $('primaResult');
+    resultBox.className = 'prima-result empty-state-box';
+    resultBox.textContent = 'Completa los datos para ver el valor estimado de tu prima.';
+});
 
 document.getElementById('laborSettlementForm').addEventListener('submit', event => {
     event.preventDefault();
@@ -4240,4 +4369,3 @@ document.addEventListener('keydown', event => {
     else if (event.key === '/') { event.preventDefault(); const s = $('paymentSearch'); if (s) s.focus(); }
     else if (event.key === '?') { event.preventDefault(); showToast('Atajos: N nuevo pago · / buscar · Esc cerrar menú/modal', 'success'); }
 });
-

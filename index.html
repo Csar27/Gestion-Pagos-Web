@@ -7,7 +7,7 @@
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20261104-icons">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20261116-money-inputs">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#16202E">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.gstatic.com https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com;">
@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
-    <link rel="stylesheet" href="assets/css/style.css?v=20261104-icons">
+    <link rel="stylesheet" href="assets/css/style.css?v=20261116-money-inputs">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false"><defs>
@@ -63,6 +63,7 @@
             <button id="chartsNav"><span class="nav-icon">◑</span>Diagramas</button>
             <button id="calculatorNav"><span class="nav-icon">∑</span>Calculadora financiera</button>
             <button id="laborNav"><span class="nav-icon">◍</span>Liquidación laboral</button>
+            <button id="primaNav"><span class="nav-icon">$</span>Prima de servicios</button>
             <button id="importNav"><span class="nav-icon">↧</span>Importar datos</button>
             <input type="file" id="importFile" accept=".csv,text/csv" hidden>
             <div class="nav-currency-wrap">
@@ -151,7 +152,7 @@
                 <div class="panel-head"><h2>Tu situación</h2><span class="eyebrow" id="simulatorMonthLabel">Mes en curso</span></div>
                 <div class="simulator-grid">
                     <div class="simulator-form">
-                        <label>Ingreso mensual<input type="text" id="simulatorIncome" inputmode="numeric" data-currency-input placeholder="2.500.000"></label>
+                        <label>Ingreso mensual<input type="text" id="simulatorIncome" inputmode="decimal" data-currency-input placeholder="2.500.000"></label>
                         <div class="simulator-real">
                             <div class="eyebrow">Gasto real del mes</div>
                             <strong id="simulatorRealMonth">$ 0</strong>
@@ -204,7 +205,7 @@
                         <div class="savings-grid">
                             <div class="simulator-form">
                                 <label>Nombre de la meta<input type="text" id="savingsName" maxlength="40" placeholder="Ej. Fondo de emergencia" autocomplete="off"></label>
-                                <label>Meta de ahorro<input type="text" id="savingsGoal" inputmode="numeric" data-currency-input placeholder="5.000.000"></label>
+                                <label>Meta de ahorro<input type="text" id="savingsGoal" inputmode="decimal" data-currency-input placeholder="5.000.000"></label>
                             </div>
                             <div class="simulator-report savings-report">
                                 <div class="report-line"><span>Meta</span><strong id="s1Goal">$ 0</strong></div>
@@ -219,7 +220,7 @@
                         <div class="step-heading"><span class="eyebrow">Paso 2 · Punto de partida</span><h3>¿Cuánto llevas ahorrado?</h3></div>
                         <div class="savings-grid">
                             <div class="simulator-form">
-                                <label>Ya tienes ahorrado<input type="text" id="savingsCurrent" inputmode="numeric" data-currency-input placeholder="500.000"></label>
+                                <label>Ya tienes ahorrado<input type="text" id="savingsCurrent" inputmode="decimal" data-currency-input placeholder="500.000"></label>
                                 <p class="savings-tip">Incluye lo que ya está en tu cuenta o alcancía para esta meta. Si es tu primer aporte, deja el campo en cero.</p>
                             </div>
                             <div class="simulator-report savings-report">
@@ -240,7 +241,7 @@
                                     <label><input type="radio" name="savingsMode" value="monthly" checked> <span>Sé cuánto aporto al mes</span></label>
                                     <label><input type="radio" name="savingsMode" value="date"> <span>Quiero llegar en una fecha</span></label>
                                 </fieldset>
-                                <label id="savingsMonthlyWrap">Aporte mensual<input type="text" id="savingsMonthly" inputmode="numeric" data-currency-input placeholder="300.000"></label>
+                                <label id="savingsMonthlyWrap">Aporte mensual<input type="text" id="savingsMonthly" inputmode="decimal" data-currency-input placeholder="300.000"></label>
                                 <label id="savingsTargetWrap" class="hidden">Fecha objetivo<input type="date" id="savingsTargetDate"></label>
                                 <p class="savings-tip" id="savingsModeHint">Con un aporte fijo calculamos en cuántos meses llegas a tu meta.</p>
                             </div>
@@ -314,7 +315,7 @@
                     <section class="calculator-panel is-active" data-calc-panel="simpleInterest">
                         <form id="simpleInterestForm" class="calculator-form">
                             <div class="field-grid three-up">
-                                <label class="field"><span>Capital inicial</span><input type="number" id="simpleCapital" min="0" step="1000" placeholder="Ej. 5000000"></label>
+                                <label class="field"><span>Capital inicial</span><input type="text" id="simpleCapital" inputmode="decimal" data-currency-input placeholder="Ej. 5.000.000"></label>
                                 <label class="field"><span>Tasa anual (%)</span><input type="number" id="simpleRate" min="0" step="0.01" placeholder="Ej. 12.5"></label>
                                 <label class="field"><span>Tiempo (años)</span><input type="number" id="simpleTime" min="0" step="0.1" placeholder="Ej. 3"></label>
                             </div>
@@ -329,7 +330,7 @@
                     <section class="calculator-panel" data-calc-panel="compoundInterest">
                         <form id="compoundInterestForm" class="calculator-form">
                             <div class="field-grid four-up">
-                                <label class="field"><span>Capital inicial</span><input type="number" id="compoundCapital" min="0" step="1000" placeholder="Ej. 5000000"></label>
+                                <label class="field"><span>Capital inicial</span><input type="text" id="compoundCapital" inputmode="decimal" data-currency-input placeholder="Ej. 5.000.000"></label>
                                 <label class="field"><span>Tasa anual (%)</span><input type="number" id="compoundRate" min="0" step="0.01" placeholder="Ej. 12"></label>
                                 <label class="field"><span>Capitalización</span><select id="compoundPeriods"><option value="1">Anual</option><option value="2">Semestral</option><option value="4">Trimestral</option><option value="12">Mensual</option><option value="360">Diaria</option></select></label>
                                 <label class="field"><span>Tiempo (años)</span><input type="number" id="compoundTime" min="0" step="0.1" placeholder="Ej. 5"></label>
@@ -345,7 +346,7 @@
                     <section class="calculator-panel" data-calc-panel="loanInstallment">
                         <form id="loanInstallmentForm" class="calculator-form">
                             <div class="field-grid three-up">
-                                <label class="field"><span>Monto del préstamo</span><input type="number" id="loanAmount" min="0" step="1000" placeholder="Ej. 30000000"></label>
+                                <label class="field"><span>Monto del préstamo</span><input type="text" id="loanAmount" inputmode="decimal" data-currency-input placeholder="Ej. 30.000.000"></label>
                                 <label class="field"><span>Tasa anual (%)</span><input type="number" id="loanRate" min="0" step="0.01" placeholder="Ej. 19.5"></label>
                                 <label class="field"><span>Plazo (meses)</span><input type="number" id="loanMonths" min="1" step="1" placeholder="Ej. 24"></label>
                             </div>
@@ -360,7 +361,7 @@
                     <section class="calculator-panel" data-calc-panel="savingsPlan">
                         <form id="savingsPlanForm" class="calculator-form">
                             <div class="field-grid three-up">
-                                <label class="field"><span>Aporte mensual</span><input type="number" id="savingsAmount" min="0" step="1000" placeholder="Ej. 500000"></label>
+                                <label class="field"><span>Aporte mensual</span><input type="text" id="savingsAmount" inputmode="decimal" data-currency-input placeholder="Ej. 500.000"></label>
                                 <label class="field"><span>Tasa anual (%)</span><input type="number" id="savingsRate" min="0" step="0.01" placeholder="Ej. 9"></label>
                                 <label class="field"><span>Tiempo (meses)</span><input type="number" id="savingsMonths" min="1" step="1" placeholder="Ej. 24"></label>
                             </div>
@@ -406,8 +407,8 @@
                             <label class="field"><span>Fecha de terminación</span><input type="date" id="laborEndDate" required></label>
                         </div>
                         <div class="field-grid two-up">
-                            <label class="field"><span>Salario mensual básico</span><input type="number" id="laborSalary" min="0" step="1000" placeholder="Ej. 2800000"></label>
-                            <label class="field"><span>Promedio otros devengados</span><input type="number" id="laborVariable" min="0" step="1000" placeholder="Opcional"></label>
+                            <label class="field"><span>Salario mensual básico</span><input type="text" id="laborSalary" inputmode="decimal" data-currency-input placeholder="Ej. 2.800.000"></label>
+                            <label class="field"><span>Promedio otros devengados</span><input type="text" id="laborVariable" inputmode="decimal" data-currency-input placeholder="Opcional"></label>
                         </div>
                         <div class="field-grid three-up">
                             <label class="field"><span>Tipo de contrato</span>
@@ -429,8 +430,8 @@
                             <label class="field"><span>Días de vacaciones ya disfrutados</span><input type="number" id="laborVacationTaken" min="0" max="30" step="1" placeholder="Ej. 6"></label>
                         </div>
                         <div class="field-grid two-up">
-                            <label class="field"><span>Auxilio de transporte</span><input type="number" id="laborTransportAllowance" min="0" step="1000" placeholder="Ej. 162000"></label>
-                            <label class="field"><span>Salario mínimo vigente</span><input type="number" id="laborMinWage" min="0" step="1000" placeholder="Ej. 1620000"></label>
+                            <label class="field"><span>Auxilio de transporte</span><input type="text" id="laborTransportAllowance" inputmode="decimal" data-currency-input placeholder="Ej. 162.000"></label>
+                            <label class="field"><span>Salario mínimo vigente</span><input type="text" id="laborMinWage" inputmode="decimal" data-currency-input placeholder="Ej. 1.620.000"></label>
                         </div>
                         <div class="panel-actions">
                             <button type="submit" class="btn btn-dark">Calcular liquidación</button>
@@ -445,6 +446,53 @@
                     <div class="labor-actions">
                         <button type="button" class="btn btn-dark" id="laborPrintBtn">Imprimir</button>
                         <button type="button" class="btn btn-light" id="laborExportBtn">Exportar resumen</button>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        <section class="hidden" id="primaView">
+            <header class="topbar">
+                <div>
+                    <div class="eyebrow">Prestación laboral Colombia</div>
+                    <h1>Calcula tu prima de servicios.</h1>
+                    <div class="eyebrow">Ingresa los días trabajados en el semestre y el salario base.</div>
+                </div>
+            </header>
+
+            <div class="prima-layout">
+                <section class="panel prima-panel">
+                    <form id="primaForm" class="labor-form">
+                        <label class="field">
+                            <span>Salario mensual básico</span>
+                            <input type="text" id="primaSalary" inputmode="decimal" data-currency-input placeholder="Ej. 2.800.000" required>
+                        </label>
+                        <div class="field-grid two-up">
+                            <label class="field">
+                                <span>Auxilio de transporte mensual</span>
+                                <input type="text" id="primaTransport" inputmode="decimal" data-currency-input placeholder="0 si no aplica">
+                            </label>
+                            <label class="field">
+                                <span>Promedio mensual de salario variable</span>
+                                <input type="text" id="primaVariable" inputmode="decimal" data-currency-input placeholder="Opcional">
+                            </label>
+                        </div>
+                        <label class="field">
+                            <span>Días trabajados en el semestre</span>
+                            <input type="number" id="primaDays" min="1" max="180" step="1" inputmode="numeric" placeholder="Entre 1 y 180" required>
+                        </label>
+                        <p class="prima-hint">Incluye el auxilio solo si tienes derecho a recibirlo. Para un semestre completo, usa 180 días.</p>
+                        <div class="panel-actions">
+                            <button type="submit" class="btn btn-dark">Calcular prima</button>
+                            <button type="reset" class="btn btn-light" id="primaResetBtn">Limpiar</button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="panel prima-result-panel">
+                    <div class="labor-alert">Estimación informativa para Colombia; el valor final puede variar según los ingresos salariales del semestre y tu situación laboral.</div>
+                    <div id="primaResult" class="prima-result empty-state-box" aria-live="polite">
+                        Completa los datos para ver el valor estimado de tu prima.
                     </div>
                 </section>
             </div>
@@ -541,8 +589,8 @@
                     </div>
                     <div class="form-grid category-form-grid">
                         <label>Nombre<input name="name" required placeholder="Ej. Salud" maxlength="30"></label>
-                        <label>Presupuesto mensual base<input name="budget" data-currency-input inputmode="numeric" placeholder="Sin presupuesto" title="Presupuesto mensual base predeterminado"></label>
-                        <label id="categoryFormMonthBudgetWrap">Presupuesto del mes seleccionado<input name="monthBudget" id="categoryFormMonthBudget" data-currency-input inputmode="numeric" placeholder="Mismo que el base" title="Ajuste específico para el mes seleccionado (opcional)"></label>
+                        <label>Presupuesto mensual base<input name="budget" data-currency-input inputmode="decimal" placeholder="Sin presupuesto" title="Presupuesto mensual base predeterminado"></label>
+                        <label id="categoryFormMonthBudgetWrap">Presupuesto del mes seleccionado<input name="monthBudget" id="categoryFormMonthBudget" data-currency-input inputmode="decimal" placeholder="Mismo que el base" title="Ajuste específico para el mes seleccionado (opcional)"></label>
                         <div class="color-field">
                             <span class="color-field-label">Color <em id="colorFieldPick">#ff856c</em></span>
                             <input type="hidden" name="color" value="#ff856c">
@@ -606,8 +654,8 @@
                     <label>Estado<select id="reportFilterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
                     <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font:10px 'DM Mono';text-transform:uppercase;letter-spacing:.05em;"><input type="checkbox" id="reportFilterRecurring" style="width:16px;height:16px;margin:0;"> Solo recurrentes</label>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                        <label>Importe desde<input type="text" id="reportFilterAmountFrom" inputmode="numeric" data-currency-input placeholder="0"></label>
-                        <label>Importe hasta<input type="text" id="reportFilterAmountTo" inputmode="numeric" data-currency-input placeholder="0"></label>
+                        <label>Importe desde<input type="text" id="reportFilterAmountFrom" inputmode="decimal" data-currency-input placeholder="0"></label>
+                        <label>Importe hasta<input type="text" id="reportFilterAmountTo" inputmode="decimal" data-currency-input placeholder="0"></label>
                     </div>
                     <button type="button" class="btn btn-light" id="reportFilterClear">Limpiar filtros</button>
                 </div>
@@ -747,8 +795,8 @@
                     <label>Estado<select id="chartsFilterStatus"><option value="">Todos</option><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label>
                     <label class="charts-check"><input type="checkbox" id="chartsFilterRecurring"><span>Solo recurrentes</span></label>
                     <div class="charts-amounts">
-                        <label>Importe desde<input type="text" id="chartsFilterAmountFrom" inputmode="numeric" data-currency-input placeholder="0"></label>
-                        <label>Importe hasta<input type="text" id="chartsFilterAmountTo" inputmode="numeric" data-currency-input placeholder="0"></label>
+                        <label>Importe desde<input type="text" id="chartsFilterAmountFrom" inputmode="decimal" data-currency-input placeholder="0"></label>
+                        <label>Importe hasta<input type="text" id="chartsFilterAmountTo" inputmode="decimal" data-currency-input placeholder="0"></label>
                     </div>
                     <button type="button" class="btn btn-light" id="chartsFilterClear">Limpiar filtros</button>
                 </div>
@@ -810,13 +858,13 @@
     </main>
 </div>
 <div class="modal-backdrop" id="importModal"><div class="modal import-modal"><h2>Importar pagos</h2><p class="import-lead">Sube un archivo <strong>CSV</strong> con tus pagos. El archivo que descargas desde “Exportar” ya cumple esta estructura, así que puedes volver a importarlo tal cual.</p><div class="import-spec"><span class="eyebrow">Estructura del archivo</span><div class="import-table-wrap"><table class="import-table"><thead><tr><th>Concepto</th><th>Categoria</th><th>Fecha</th><th>Estado</th><th>Importe</th><th>Recurrente</th></tr></thead><tbody><tr><td>Arriendo</td><td>Vivienda</td><td>2026-09-01</td><td>Pagado</td><td>900000</td><td>Sí</td></tr><tr><td>Mercado</td><td>Alimentos</td><td>05/09/2026</td><td>Pendiente</td><td>180.000</td><td>No</td></tr></tbody></table></div><ul class="import-notes"><li><strong>Concepto</strong>: texto libre. Es el único campo obligatorio junto con fecha e importe.</li><li><strong>Categoría</strong>: si no existe, se crea sola con un color libre.</li><li><strong>Fecha</strong>: <code>AAAA-MM-DD</code> o <code>DD/MM/AAAA</code>.</li><li><strong>Estado</strong>: Pagado, No pagado o Pendiente.</li><li><strong>Importe</strong>: números solos; acepta <code>180.000</code>.</li><li><strong>Recurrente</strong>: Sí o No. Las columnas pueden venir en otro orden si llevas cabecera.</li><li>Separador <code>,</code> o <code>;</code>, codificación UTF-8. Las filas vacías o repetidas se ignoran.</li></ul></div><div class="modal-actions"><button type="button" class="btn btn-light" id="importTemplateBtn">↓ <span>Descargar plantilla</span></button><button type="button" class="btn btn-light closeModal">Cancelar</button><button type="button" class="btn btn-dark" id="importPickBtn">Elegir archivo CSV</button></div></div></div>
-<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Moneda<select name="currency" id="paymentCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><div class="attachment-field"><label>Comprobante o recibo (opcional)<input type="file" id="paymentAttachment" accept="image/*,application/pdf"></label><div class="attachment-preview hidden" id="paymentAttachmentPreview"><span class="attachment-info" id="paymentAttachmentInfo"></span><button type="button" class="btn-remove-attachment" id="paymentAttachmentRemove">Quitar</button></div></div><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label>
+<div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input data-local-currency="paymentCurrency" placeholder="0"></label><label>Moneda<select name="currency" id="paymentCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><div class="attachment-field"><label>Comprobante o recibo (opcional)<input type="file" id="paymentAttachment" accept="image/*,application/pdf"></label><div class="attachment-preview hidden" id="paymentAttachmentPreview"><span class="attachment-info" id="paymentAttachmentInfo"></span><button type="button" class="btn-remove-attachment" id="paymentAttachmentRemove">Quitar</button></div></div><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label>
 <label class="check-field" id="editSeriesField" style="display:none"><input type="checkbox" name="editSeries" value="1"><span>Actualizar toda la serie<em>Aplica los cambios a todos los pagos recurrentes con el mismo concepto.</em></span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
 
-<div class="modal-backdrop" id="incomeModal"><form class="modal" id="incomeForm"><h2>Registrar nuevo ingreso</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Salario"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="numeric" data-currency-input placeholder="0"></label><label>Moneda<select name="currency" id="incomeCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="incomeCategorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes</span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar ingreso</button></div></form></div>
+<div class="modal-backdrop" id="incomeModal"><form class="modal" id="incomeForm"><h2>Registrar nuevo ingreso</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Salario"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input data-local-currency="incomeCurrency" placeholder="0"></label><label>Moneda<select name="currency" id="incomeCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="incomeCategorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes</span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar ingreso</button></div></form></div>
 
 <!-- Notificaciones de pagos -->
-<div class="modal-backdrop" id="savingsGoalModal"><form class="modal" id="savingsGoalForm"><h2>Nueva meta de ahorro</h2><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Fondo de emergencia"></label><label>Meta<input name="target" required type="text" inputmode="numeric" data-currency-input placeholder="5.000.000"></label><label>Ahorrado<input name="current" type="text" inputmode="numeric" data-currency-input placeholder="0"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar meta</button></div></form></div>
+<div class="modal-backdrop" id="savingsGoalModal"><form class="modal" id="savingsGoalForm"><h2>Nueva meta de ahorro</h2><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Fondo de emergencia"></label><label>Meta<input name="target" required type="text" inputmode="decimal" data-currency-input placeholder="5.000.000"></label><label>Ahorrado<input name="current" type="text" inputmode="decimal" data-currency-input placeholder="0"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar meta</button></div></form></div>
 <div class="modal-backdrop" id="receiptModal"><div class="modal receipt-modal"><div class="panel-head"><h2 id="receiptModalTitle">Comprobante de pago</h2><button type="button" class="closeModal" aria-label="Cerrar modal">✕</button></div><div class="receipt-preview-body" id="receiptPreviewBody"></div><div class="modal-actions"><a class="btn btn-light" id="receiptDownloadLink" download target="_blank" rel="noopener">Descargar</a><button type="button" class="btn btn-dark closeModal">Cerrar</button></div></div></div>
 <div class="notif-widget" id="notifWidget">
     <button type="button" class="notif-bell" id="notifBell" aria-haspopup="dialog" aria-expanded="false" aria-label="Notificaciones de pagos">
@@ -875,7 +923,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<script src="assets/js/script.js?v=20261104-icons"></script>
+<script src="assets/js/script.js?v=20261116-money-inputs"></script>
 <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 <div class="save-indicator" id="saveIndicator"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

@@ -1017,6 +1017,16 @@ body.dark .charts-area-dot { stroke:var(--paper); }
 }
 .labor-layout { display:grid; gap:16px; }
 .labor-panel, .labor-result-panel { padding:18px; }
+.prima-layout { display:grid; gap:16px; }
+.prima-panel, .prima-result-panel { padding:18px; }
+.prima-hint { margin:0; color:var(--muted); font-size:.9rem; line-height:1.5; }
+.prima-result { display:grid; gap:18px; margin-top:16px; }
+.prima-result.empty-state-box { color:var(--muted); }
+.prima-estimate { display:grid; gap:6px; padding:18px; border-left:3px solid var(--brass); background:var(--surface-alt); }
+.prima-estimate span, .prima-estimate small { color:var(--muted); }
+.prima-estimate strong { color:var(--ink); font-family:'Newsreader',Georgia,serif; font-size:clamp(1.7rem,5vw,2.4rem); font-weight:500; line-height:1.15; overflow-wrap:anywhere; }
+.prima-breakdown { display:grid; gap:0; }
+.prima-formula { margin:0; color:var(--muted); font-size:.9rem; line-height:1.5; }
 .labor-result-box.empty-state-box { color:var(--muted); }
 .labor-alert {
     display:flex;
@@ -1058,6 +1068,7 @@ body.dark .charts-area-dot { stroke:var(--paper); }
     .four-up { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .calc-stat-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
     .labor-layout { grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); }
+    .prima-layout { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
 }
 @media (min-width:768px) {
     .three-up { grid-template-columns:repeat(3, minmax(0, 1fr)); }
