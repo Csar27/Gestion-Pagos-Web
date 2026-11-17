@@ -7,7 +7,7 @@
     <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cartera | Gestión de pagos</title>
-    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20261116-money-inputs">
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo-mark.svg?v=20261117-complete">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#16202E">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://apis.google.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://firebasestorage.googleapis.com; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.gstatic.com https://cdnjs.cloudflare.com; frame-src https://*.firebaseapp.com https://accounts.google.com; font-src 'self' data: https://fonts.gstatic.com;">
@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
-    <link rel="stylesheet" href="assets/css/style.css?v=20261116-money-inputs">
+    <link rel="stylesheet" href="assets/css/style.css?v=20261117-complete">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" focusable="false"><defs>
@@ -57,7 +57,8 @@
             <button id="simulatorNav"><span class="nav-icon">◫</span>Simulador</button>
             <button id="savingsNav"><span class="nav-icon">$</span>Ahorro</button>
             <button id="balanceNav"><span class="nav-icon">▤</span>Balance</button>
-            <button id="incomeNav"><span class="nav-icon">↑</span>Ingresos</button>
+            <button id="debtsNav"><span class="nav-icon">D</span>Deudas</button>
+            <button id="calendarNav"><span class="nav-icon">▦</span>Calendario</button>            <button id="incomeNav"><span class="nav-icon">↑</span>Ingresos</button>
             <button id="categoriesNav"><span class="nav-icon">◌</span>Categorías</button>
             <button id="reportsNav"><span class="nav-icon">▥</span>Reportes</button>
             <button id="chartsNav"><span class="nav-icon">◑</span>Diagramas</button>
@@ -86,6 +87,8 @@
                     <span class="profile-chevron" aria-hidden="true">▾</span>
                 </button>
                 <div class="profile-menu hidden" id="profileMenu" role="menu" aria-label="Menú de perfil">
+                    <button type="button" class="profile-menu-item" id="settingsNavBtn">Ajustes</button>
+                    <button type="button" class="profile-menu-item" id="globalSearchBtn">Buscar (Ctrl+K)</button>
                     <button type="button" class="profile-menu-item" id="profileLogoutBtn">Cerrar sesión</button>
                 </div>
             </div>
@@ -139,6 +142,35 @@
             </div>
         </section>
         </div>
+        <section class="calendar-view hidden" id="calendarView">
+            <header class="topbar">
+                <div><div class="eyebrow">Fechas y movimientos</div><h1>Calendario y proyección</h1><p class="calendar-intro">Consulta tus movimientos y anticipa el flujo estimado de los próximos seis meses.</p></div>
+            </header>
+            <div class="calendar-layout">
+                <section class="panel calendar-panel" aria-labelledby="calendarMonthLabel">
+                    <div class="panel-head calendar-heading">
+                        <div class="calendar-month-control">
+                            <button class="btn btn-light calendar-step" id="calendarPrevMonth" type="button" aria-label="Mes anterior">‹</button>
+                            <h2 id="calendarMonthLabel"></h2>
+                            <button class="btn btn-light calendar-step" id="calendarNextMonth" type="button" aria-label="Mes siguiente">›</button>
+                        </div>
+                        <button class="btn btn-light calendar-today" id="calendarToday" type="button">Hoy</button>
+                    </div>
+                    <div class="calendar-weekdays" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+                    <div class="calendar-grid" id="calendarGrid" role="grid" aria-label="Calendario mensual"></div>
+                    <div class="calendar-legend"><span><i class="calendar-legend-dot is-payment"></i>Pagos</span><span><i class="calendar-legend-dot is-income"></i>Ingresos</span><span><i class="calendar-legend-dot is-estimated"></i>Estimado</span></div>
+                </section>
+                <section class="panel calendar-events-panel" aria-labelledby="calendarDayLabel">
+                    <div class="panel-head"><h2 id="calendarDayLabel">Movimientos del día</h2></div>
+                    <div class="calendar-day-total" id="calendarDaySummary"></div>
+                    <div class="calendar-event-list" id="calendarEvents" aria-live="polite"></div>
+                </section>
+            </div>
+            <section class="panel forecast-panel">
+                <div class="panel-head"><div><h2>Flujo estimado</h2><p class="forecast-note">Ingresos esperados menos pagos pendientes. No representa el saldo de una cuenta.</p></div><span class="eyebrow">6 meses · <span id="forecastCurrency">COP</span></span></div>
+                <div class="forecast-grid" id="forecastGrid"></div>
+            </section>
+        </section>
         <section class="simulator-view hidden" id="simulatorView">
             <header class="topbar">
                 <div><div class="eyebrow">Plan semanal</div><h1>Simulador con tus pagos reales</h1><div class="eyebrow">Calculado con lo que realmente gastaste este mes.</div></div>
@@ -546,8 +578,41 @@
             </div>
         </section>
 
-        <section class="hidden" id="incomeView">
+        <section class="hidden" id="debtsView">
             <header class="topbar">
+                <div>
+                    <div class="eyebrow">Deudas y cuotas</div>
+                    <h1>Tus deudas y avance hasta saldarlas.</h1>
+                    <div class="eyebrow" id="debtsMeta">—</div>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-dark" id="addDebtBtn" type="button">＋ <span>Nueva deuda</span></button>
+                </div>
+            </header>
+            <section class="overview">
+                <article class="stat primary">
+                    <div class="stat-head"><svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wallet"/></svg><div class="stat-label">Saldo pendiente</div></div>
+                    <div class="amount" id="debtsTotal">$ 0</div>
+                    <span class="delta" id="debtsCount">0 deudas</span>
+                </article>
+                <article class="stat">
+                    <div class="stat-head"><svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-calc"/></svg><div class="stat-label">Cuota mensual estimada</div></div>
+                    <div class="amount" id="debtsInstallment">$ 0</div>
+                </article>
+                <article class="stat">
+                    <div class="stat-head"><svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-trend-down"/></svg><div class="stat-label">Interés estimado restante</div></div>
+                    <div class="amount" id="debtsInterest">$ 0</div>
+                </article>
+                <article class="stat">
+                    <div class="stat-head"><svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"/></svg><div class="stat-label">Pagadas / total</div></div>
+                    <div class="amount" id="debtsProgress">0 %</div>
+                </article>
+            </section>
+            <div id="debtsList"></div>
+            <div class="empty hidden" id="debtsEmpty">Aún no tienes deudas registradas.</div>
+        </section>
+
+        <section class="hidden" id="incomeView">            <header class="topbar">
                 <div>
                     <div class="eyebrow">Ingresos</div>
                     <h1>Tus ingresos registrados.</h1>
@@ -861,6 +926,8 @@
 <div class="modal-backdrop" id="paymentModal"><form class="modal" id="paymentForm"><h2>Registrar nuevo pago</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Supermercado"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input data-local-currency="paymentCurrency" placeholder="0"></label><label>Moneda<select name="currency" id="paymentCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="categorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label>Estado<select name="status"><option value="pagado">Pagado</option><option value="no_pagado">No pagado</option><option value="pendiente">Pendiente</option></select></label><div class="attachment-field"><label>Comprobante o recibo (opcional)<input type="file" id="paymentAttachment" accept="image/*,application/pdf"></label><div class="attachment-preview hidden" id="paymentAttachmentPreview"><span class="attachment-info" id="paymentAttachmentInfo"></span><button type="button" class="btn-remove-attachment" id="paymentAttachmentRemove">Quitar</button></div></div><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes<em>Al llegar la fecha se creará el próximo pago, pendiente de pagar.</em></span></label>
 <label class="check-field" id="editSeriesField" style="display:none"><input type="checkbox" name="editSeries" value="1"><span>Actualizar toda la serie<em>Aplica los cambios a todos los pagos recurrentes con el mismo concepto.</em></span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar pago</button></div></form></div>
 
+<div class="modal-backdrop" id="payDebtModal"><form class="modal" id="payDebtForm"><h2>Registrar cuota</h2><div class="form-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input placeholder="0"></label><label>Fecha<input name="date" required type="date"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Registrar</button></div></form></div>
+<div class="modal-backdrop" id="debtModal"><form class="modal" id="debtForm"><h2>Nueva deuda</h2><div class="form-grid"><label>Nombre<input name="name" required placeholder="Ej. Tarjeta de crédito"></label><label>Acreedor<input name="creditor" placeholder="Ej. Banco X"></label><div class="amount-currency-grid"><label>Saldo pendiente<input name="balance" required type="text" inputmode="decimal" data-currency-input data-local-currency="debtCurrency" placeholder="0"></label><label>Moneda<select name="currency" id="debtCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Tasa anual %<input name="rate" type="number" step="0.01" min="0" placeholder="0"></label><label>Cuota mensual<input name="installment" type="text" inputmode="decimal" data-currency-input data-local-currency="debtCurrency" placeholder="0"></label><label>Día de pago<input name="dueDay" type="number" min="1" max="31" placeholder="1"></label><label>Cuotas totales<input name="totalInstallments" type="number" min="1" placeholder="0"></label><label>Cuotas pagadas<input name="paidInstallments" type="number" min="0" placeholder="0"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar deuda</button></div></form></div>
 <div class="modal-backdrop" id="incomeModal"><form class="modal" id="incomeForm"><h2>Registrar nuevo ingreso</h2><div class="form-grid"><label>Concepto<input name="name" required placeholder="Ej. Salario"></label><div class="amount-currency-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input data-local-currency="incomeCurrency" placeholder="0"></label><label>Moneda<select name="currency" id="incomeCurrency"><option value="COP">COP ($)</option><option value="USD">USD (US$)</option><option value="EUR">EUR (€)</option><option value="MXN">MXN (Mex$)</option></select></label></div><label>Categoría<select name="category" id="incomeCategorySelect"></select></label><label>Fecha<input name="date" required type="date"></label><label class="check-field"><input type="checkbox" name="recurring" value="1"><span>Repetir cada mes</span></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar ingreso</button></div></form></div>
 
 <!-- Notificaciones de pagos -->
@@ -889,6 +956,14 @@
         </div>
     </div>
 </div>
+
+<div class="modal-backdrop" id="globalSearchModal"><div class="modal search-modal"><div class="panel-head"><h2>Búsqueda global</h2><button type="button" class="closeModal" aria-label="Cerrar búsqueda">×</button></div><input type="search" id="globalSearchInput" placeholder="Concepto, categoría, estado, importe o fecha" aria-label="Búsqueda global"><div id="globalSearchResults" class="search-results"></div></div></div>
+
+<div class="lock-overlay hidden" id="lockOverlay"><form class="lock-card"><h2>Cartera bloqueada</h2><p>Ingresa tu PIN para continuar.</p><input type="password" id="lockPinInput" inputmode="numeric" maxlength="8" placeholder="PIN" aria-label="PIN" autocomplete="current-password"><button type="button" class="btn btn-dark" id="lockUnlockBtn">Desbloquear</button><button type="button" class="btn btn-light" id="lockResetBtn">Cerrar sesión</button><p class="auth-error" id="lockError" role="alert"></p></form></div>
+
+<div class="modal-backdrop" id="settingsModal"><form class="modal"><h2>Ajustes</h2><div class="form-grid"><label>Recordarme <select id="reminderDays"><option value="0">El día del vencimiento</option><option value="1">1 día antes</option><option value="3">3 días antes</option><option value="7">7 días antes</option></select></label><label class="check-field"><input type="checkbox" id="reminderSystem"> <span>Notificaciones del sistema</span></label><label class="check-field"><input type="checkbox" id="reminderOverdue"> <span>Avisar vencidos</span></label><label class="check-field"><input type="checkbox" id="pinEnabled"> <span>Bloqueo con PIN</span></label><div id="pinSetup" class="hidden"><label>PIN<input type="password" id="pinValue" inputmode="numeric" maxlength="8" placeholder="4–8 dígitos"></label><label>Confirmar PIN<input type="password" id="pinConfirm" inputmode="numeric" maxlength="8" placeholder="Repite el PIN" autocomplete="new-password"></label></div></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cerrar</button><button type="button" class="btn btn-dark" id="saveSettingsBtn">Guardar</button></div></form></div>
+
+<div class="modal-backdrop" id="contributionModal"><form class="modal" id="contributionForm"><h2>Registrar aporte</h2><div class="form-grid"><label>Importe<input name="amount" required type="text" inputmode="decimal" data-currency-input placeholder="0"></label><label>Fecha<input name="date" required type="date"></label><label>Nota<input name="note" placeholder="Opcional"></label></div><div class="modal-actions"><button type="button" class="btn btn-light closeModal">Cancelar</button><button class="btn btn-dark">Guardar aporte</button></div></form></div>
 
 <!-- Guía paso a paso del simulador -->
 <div class="tour-overlay hidden" id="simTour" role="dialog" aria-modal="true" aria-label="Guía del simulador">
@@ -923,7 +998,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<script src="assets/js/script.js?v=20261116-money-inputs"></script>
+<script src="assets/js/script.js?v=20261117-complete"></script>
 <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 <div class="save-indicator" id="saveIndicator"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>

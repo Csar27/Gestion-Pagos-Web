@@ -113,7 +113,27 @@ try { incomes = JSON.parse(localStorage.getItem('cartera_incomes') || '[]'); } c
 let editingIncomeId = null;
 let savingsGoals = [];
 try { savingsGoals = JSON.parse(localStorage.getItem('cartera_savings_goals') || '[]'); } catch (e) { savingsGoals = []; }
-const FINANCE_NOTES_KEY = 'cartera_finance_notes';
+savingsGoals = savingsGoals.map(goal => ({
+    id: goal.id || `local-${Date.now()}`,
+    name: goal.name || 'Meta',
+    target: Number(goal.target || 0),
+    opening: goal.opening !== undefined ? Number(goal.opening || 0) : Number(goal.current || 0),
+    contributions: Array.isArray(goal.contributions) ? goal.contributions : [],
+    monthlyPlan: Number(goal.monthlyPlan || 0),
+    targetDate: goal.targetDate || '',
+    createdAt: goal.createdAt || new Date().toISOString()
+}));
+let debts = [];
+try { debts = JSON.parse(localStorage.getItem('cartera_debts') || '[]'); } catch (e) { debts = []; }
+let reminderSettings = { daysBefore:3, system:true, overdue:true };
+try { reminderSettings = Object.assign(reminderSettings, JSON.parse(localStorage.getItem('cartera_reminder_settings') || '{}')); } catch (e) {}
+let securitySettings = { pinEnabled:false, pinHash:'', salt:'' };
+try { securitySettings = Object.assign(securitySettings, JSON.parse(localStorage.getItem('cartera_security') || '{}')); } catch (e) {}
+function persistDebts() { localStorage.setItem('cartera_debts', JSON.stringify(debts)); const c = userCollection('debts'); if (c) debts.forEach(d => { if (!String(d.id).startsWith('local-')) c.doc(d.id).set(d).catch(()=>{}); else c.add(d).then(r=>{d.id=r.id;}).catch(()=>{}); }); }
+function persistSavingsGoals() { localStorage.setItem('cartera_savings_goals', JSON.stringify(savingsGoals)); const c = userCollection('savingsGoals'); if (c) savingsGoals.forEach(g => { if (!String(g.id).startsWith('local-')) c.doc(g.id).set(g).catch(()=>{}); }); }
+function persistSettings() { localStorage.setItem('cartera_reminder_settings', JSON.stringify(reminderSettings)); localStorage.setItem('cartera_security', JSON.stringify(securitySettings)); }
+function goalCurrent(goal) { return (Number(goal.opening)||0) + (goal.contributions||[]).reduce((s,c)=>s+(Number(c.amount)||0),0); }
+function goalProgress(goal) { const t=Number(goal.target)||0; return t>0 ? Math.min(100, (goalCurrent(goal)/t)*100) : 0; }const FINANCE_NOTES_KEY = 'cartera_finance_notes';
 let financialNotes = [];
 try { financialNotes = JSON.parse(localStorage.getItem(FINANCE_NOTES_KEY) || '[]'); } catch (error) { financialNotes = []; }
 const PAGE_SIZE = paymentFilters.pageSize || 5;
@@ -165,6 +185,8 @@ let syncStatus = 'synced'; // 'synced' | 'syncing' | 'offline' | 'conflict'
 let firestoreUnsubscribers = [];
 let lastSyncTimestamp = localStorage.getItem('cartera_last_sync') || new Date().toISOString();
 let selectedBudgetMonth = new Date().toISOString().slice(0, 7);
+let calendarSelectedDate = todayKey();
+let calendarVisibleMonth = calendarSelectedDate.slice(0, 7);
 let selectedAttachmentFile = null;
 
 function getCategoryBudget(category, monthKey) {
@@ -919,6 +941,7 @@ function renderIncomes() {
     if (empty) empty.classList.toggle('hidden', incomes.length > 0);
     if (incomes.length === 0 && list.parentElement) list.parentElement.classList.add('hidden');
     else if (list.parentElement) list.parentElement.classList.remove('hidden');
+    renderCalendarForecast();
 }
 function persistIncomes() {
     localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
@@ -930,9 +953,7 @@ function persistIncomes() {
         collection.doc(income.id).set(income).catch(() => {});
     });
 }
-function persistSavingsGoals() {
-    localStorage.setItem('cartera_savings_goals', JSON.stringify(savingsGoals));
-}
+// persistSavingsGoals definida arriba (incluye sync Firestore)
 function renderSavingsGoals() {
     const list = $('savingsGoalsList');
     if (!list) return;
@@ -1763,18 +1784,28 @@ async function syncRecurringPayments() {
     const currentMonth = todayKey().slice(0, 7);
     const collection = userCollection('payments');
     let created = 0;
-    const seeds = payments.filter(payment => payment.recurring);
+    const seedMap = new Map();
+    payments.filter(payment => payment.recurring).forEach(payment => {
+        const date = calendarDateKey(payment.date);
+        if (!date) return;
+        const key = calendarSeriesKey('payment', payment);
+        const existing = seedMap.get(key);
+        if (!existing || date < existing.date) seedMap.set(key, { payment, date });
+    });
+    const seeds = [...seedMap.values()];
     for (const seed of seeds) {
-        let date = seed.date;
+        let month = calendarMonthOffset(seed.date.slice(0, 7), 1);
         for (let guard = 0; guard < 60; guard += 1) {
-            const next = nextMonthDate(date);
-            if (!next || next.slice(0, 7) > currentMonth) break;
-            const candidate = { name: seed.name, category: seed.category, amount: Number(seed.amount) || 0, date: next, status: 'pendiente', recurring: true };
+            if (!month || month > currentMonth) break;
+            const date = recurringDateForMonth(seed.date, month);
+            if (!date) break;
+            const candidate = { name: seed.payment.name, category: seed.payment.category, amount: Number(seed.payment.amount) || 0, currency: seed.payment.currency || appCurrency, date, status: 'pendiente', recurring: true };
             const exists = isExistingPaymentRecord(candidate, payments);
-            date = next;
+            const nextMonth = calendarMonthOffset(month, 1);
+            month = nextMonth;
             if (exists) continue;
             const clone = { ...candidate };
-            if (collection && !String(seed.id).startsWith('local-')) {
+            if (collection && !String(seed.payment.id).startsWith('local-')) {
                 try {
                     const ref = await collection.add(clone);
                     payments.push({ ...clone, id: ref.id });
@@ -1830,6 +1861,178 @@ function normalizePaymentDate(value) {
     }
     const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+function calendarMonthKeyFromDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+function calendarMonthDate(monthKey, day = 1) {
+    const [year, month] = String(monthKey || '').split('-').map(Number);
+    if (!year || !month || month > 12) return null;
+    const lastDay = new Date(year, month, 0).getDate();
+    return new Date(year, month - 1, Math.min(Math.max(1, Number(day) || 1), lastDay), 12);
+}
+function calendarMonthOffset(monthKey, offset) {
+    const date = calendarMonthDate(monthKey);
+    if (!date) return null;
+    date.setMonth(date.getMonth() + offset);
+    return calendarMonthKeyFromDate(date);
+}
+function calendarDateKey(value) {
+    const date = normalizePaymentDate(value);
+    return date ? formatDateKey(date) : null;
+}
+function recurringDateForMonth(seedDate, monthKey) {
+    const day = Number(String(seedDate || '').slice(8, 10));
+    const date = calendarMonthDate(monthKey, day);
+    return date ? formatDateKey(date) : null;
+}
+function calendarRecordKey(kind, item, dateKey) {
+    return `${calendarRecordBaseKey(kind, item, dateKey)}|${String(item.currency || appCurrency || 'COP').toUpperCase()}`;
+}
+function calendarSeriesKey(kind, item) {
+    return `${kind}|${normalizePaymentText(item.name)}|${normalizePaymentText(item.category)}|${Number(item.amount) || 0}|${String(item.currency || appCurrency || 'COP').toUpperCase()}`;
+}
+function calendarRecordBaseKey(kind, item, dateKey) {
+    return `${kind}|${normalizePaymentText(item.name)}|${normalizePaymentText(item.category)}|${dateKey}|${Number(item.amount) || 0}`;
+}
+function calendarEventsForRange(startMonth, endMonth, includePaid = true) {
+    const startKey = `${startMonth}-01`;
+    const endMonthDate = calendarMonthDate(endMonth);
+    if (!endMonthDate) return [];
+    endMonthDate.setMonth(endMonthDate.getMonth() + 1, 0);
+    const endKey = formatDateKey(endMonthDate);
+    const today = todayKey();
+    const allActualEvents = [];
+    payments.forEach(payment => {
+        const date = calendarDateKey(payment.date);
+        if (!date || date < startKey || date > endKey) return;
+        allActualEvents.push({ kind: 'payment', item: payment, date, estimated: false });
+    });
+    incomes.forEach(income => {
+        const date = calendarDateKey(income.date);
+        if (!date || date < startKey || date > endKey) return;
+        allActualEvents.push({ kind: 'income', item: income, date, estimated: false });
+    });
+    const actualKeys = new Set(allActualEvents.map(event => calendarRecordKey(event.kind, event.item, event.date)));
+    const actualCurrencylessKeys = new Set(allActualEvents
+        .filter(event => !event.item.currency)
+        .map(event => calendarRecordBaseKey(event.kind, event.item, event.date)));
+    const estimatedEvents = [];
+    [
+        { kind: 'payment', records: payments.filter(payment => payment.recurring) },
+        { kind: 'income', records: incomes.filter(income => income.recurring) }
+    ].forEach(group => {
+        const seedMap = new Map();
+        group.records.forEach(item => {
+            const date = calendarDateKey(item.date);
+            if (!date) return;
+            const key = calendarSeriesKey(group.kind, item);
+            const existing = seedMap.get(key);
+            if (!existing || date < existing.date) seedMap.set(key, { item, date });
+        });
+        seedMap.forEach(({ item: seed, date: seedDate }) => {
+            for (let month = startMonth; month <= endMonth;) {
+                const date = recurringDateForMonth(seedDate, month);
+                if (date && date > seedDate && date >= today && date >= startKey && date <= endKey) {
+                    const key = calendarRecordKey(group.kind, seed, date);
+                    if (!actualKeys.has(key) && !actualCurrencylessKeys.has(calendarRecordBaseKey(group.kind, seed, date))) {
+                        actualKeys.add(key);
+                        const item = group.kind === 'payment' ? { ...seed, status: 'pendiente' } : seed;
+                        estimatedEvents.push({ kind: group.kind, item, date, estimated: true });
+                    }
+                }
+                const next = calendarMonthOffset(month, 1);
+                if (!next || next <= month) break;
+                month = next;
+            }
+        });
+    });
+    const visibleActualEvents = includePaid
+        ? allActualEvents
+        : allActualEvents.filter(event => event.kind !== 'payment' || event.item.status !== 'pagado');
+    return visibleActualEvents.concat(estimatedEvents).sort((a, b) => a.date.localeCompare(b.date) || a.kind.localeCompare(b.kind));
+}
+function calendarEventAmount(event) {
+    return convertCurrency(event.item.amount, event.item.currency, appCurrency);
+}
+function renderCalendarDay(events) {
+    const label = $('calendarDayLabel');
+    const summary = $('calendarDaySummary');
+    const list = $('calendarEvents');
+    if (!label || !summary || !list) return;
+    const selected = normalizePaymentDate(calendarSelectedDate);
+    label.textContent = selected
+        ? `Movimientos del ${selected.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' })}`
+        : 'Movimientos del día';
+    const dayEvents = events.filter(event => event.date === calendarSelectedDate);
+    const incomeTotal = dayEvents.filter(event => event.kind === 'income').reduce((total, event) => total + calendarEventAmount(event), 0);
+    const paymentTotal = dayEvents.filter(event => event.kind === 'payment').reduce((total, event) => total + calendarEventAmount(event), 0);
+    summary.innerHTML = `<span>Ingresos <strong>${money(incomeTotal)}</strong></span><span>Pagos <strong>${money(paymentTotal)}</strong></span><span class="calendar-day-net">Neto <strong>${money(incomeTotal - paymentTotal)}</strong></span>`;
+    if (!dayEvents.length) {
+        list.innerHTML = '<p class="calendar-empty">No hay movimientos para este día.</p>';
+        return;
+    }
+    list.innerHTML = dayEvents.map(event => {
+        const item = event.item;
+        const isPayment = event.kind === 'payment';
+        const status = event.estimated ? 'Estimado' : (isPayment ? paymentStatusLabel(getPaymentStatus(item)) : 'Registrado');
+        return `<article class="calendar-event ${isPayment ? 'is-payment' : 'is-income'}${event.estimated ? ' is-estimated' : ''}">
+            <i class="calendar-event-mark" aria-hidden="true"></i>
+            <div class="calendar-event-copy"><strong>${escapeHtml(item.name || (isPayment ? 'Pago' : 'Ingreso'))}</strong><span>${escapeHtml(item.category || 'Sin categoría')} · ${status}</span></div>
+            <strong class="calendar-event-amount">${isPayment ? '−' : '+'}${money(calendarEventAmount(event))}</strong>
+        </article>`;
+    }).join('');
+}
+function renderCalendarForecast() {
+    const view = $('calendarView');
+    if (!view || view.classList.contains('hidden')) return;
+    const monthKey = calendarVisibleMonth || todayKey().slice(0, 7);
+    const monthDate = calendarMonthDate(monthKey);
+    const grid = $('calendarGrid');
+    const monthLabel = $('calendarMonthLabel');
+    if (!monthDate || !grid || !monthLabel) return;
+    monthLabel.textContent = monthDate.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+    const endMonth = calendarMonthOffset(monthKey, 0);
+    const events = calendarEventsForRange(monthKey, endMonth);
+    const firstWeekday = (new Date(monthDate.getFullYear(), monthDate.getMonth(), 1).getDay() + 6) % 7;
+    const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    const cells = Array.from({ length: firstWeekday }, () => '<span class="calendar-blank" role="presentation"></span>');
+    for (let day = 1; day <= daysInMonth; day += 1) {
+        const date = `${monthKey}-${String(day).padStart(2, '0')}`;
+        const dayEvents = events.filter(event => event.date === date);
+        const hasPayment = dayEvents.some(event => event.kind === 'payment');
+        const hasIncome = dayEvents.some(event => event.kind === 'income');
+        const hasEstimate = dayEvents.some(event => event.estimated);
+        const marks = `${hasPayment ? '<i class="calendar-day-mark is-payment" aria-hidden="true"></i>' : ''}${hasIncome ? '<i class="calendar-day-mark is-income" aria-hidden="true"></i>' : ''}${hasEstimate ? '<i class="calendar-day-mark is-estimated" aria-hidden="true"></i>' : ''}`;
+        const isToday = date === todayKey();
+        const countLabel = dayEvents.length ? `${dayEvents.length} mov.` : '';
+        const spoken = `${day} de ${monthDate.toLocaleDateString('es-CO', { month: 'long' })}${dayEvents.length ? `, ${dayEvents.length} movimientos` : ', sin movimientos'}${isToday ? ', hoy' : ''}`;
+        cells.push(`<button type="button" class="calendar-day${date === calendarSelectedDate ? ' is-selected' : ''}${isToday ? ' is-today' : ''}" role="gridcell" data-calendar-date="${date}" aria-label="${spoken}" aria-selected="${date === calendarSelectedDate}"${isToday ? ' aria-current="date"' : ''}><span class="calendar-day-number">${day}</span><span class="calendar-day-marks">${marks}</span><span class="calendar-day-count">${countLabel}</span></button>`);
+    }
+    grid.innerHTML = cells.join('');
+    renderCalendarDay(events);
+    const forecastGrid = $('forecastGrid');
+    if (!forecastGrid) return;
+    const firstForecastMonth = todayKey().slice(0, 7);
+    const lastForecastMonth = calendarMonthOffset(firstForecastMonth, 5);
+    const forecastEvents = calendarEventsForRange(firstForecastMonth, lastForecastMonth, false);
+    const forecastMonths = Array.from({ length: 6 }, (_, index) => calendarMonthOffset(firstForecastMonth, index));
+    $('forecastCurrency').textContent = appCurrency;
+    forecastGrid.innerHTML = forecastMonths.map((month, index) => {
+        const monthEvents = forecastEvents.filter(event => event.date.startsWith(month));
+        const income = monthEvents.filter(event => event.kind === 'income' && (event.estimated || event.date >= todayKey()))
+            .reduce((total, event) => total + calendarEventAmount(event), 0);
+        const outflow = monthEvents.filter(event => event.kind === 'payment' && getPaymentStatus(event.item) !== 'pagado')
+            .reduce((total, event) => total + calendarEventAmount(event), 0);
+        const net = income - outflow;
+        const date = calendarMonthDate(month);
+        const label = date ? date.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' }) : month;
+        return `<article class="forecast-month${index === 0 ? ' is-current' : ''}">
+            <div class="forecast-month-head"><h3>${label}</h3>${index === 0 ? '<span>En curso</span>' : ''}</div>
+            <dl><div><dt>Ingresos</dt><dd class="is-income">${money(income)}</dd></div><div><dt>Pagos</dt><dd class="is-payment">${money(outflow)}</dd></div></dl>
+            <div class="forecast-net"><span>Neto estimado</span><strong class="${net < 0 ? 'is-negative' : 'is-positive'}">${money(net)}</strong></div>
+        </article>`;
+    }).join('');
 }
 function getCurrentWeekPayments() {
     const { start, end } = getCurrentWeekRange();
@@ -3340,7 +3543,7 @@ function setActiveNav(buttonId) {
         button.classList.toggle('active', button.id === buttonId);
     });
 }
-const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'incomeView', 'calculatorView', 'laborView', 'primaView', 'categoriesView', 'reportsView', 'chartsView'].filter(id => !!$(id));
+const APP_VIEWS = ['summaryView', 'simulatorView', 'savingsView', 'balanceView', 'calendarView', 'incomeView', 'calculatorView', 'laborView', 'primaView', 'categoriesView', 'reportsView', 'chartsView', 'debtsView'].filter(id => !!$(id));
 function showView(viewId) {
     APP_VIEWS.forEach(id => {
         const view = $(id);
@@ -3438,18 +3641,51 @@ const navBalance = $('balanceNav'); if (navBalance) navBalance.onclick = () => {
     setActiveNav('balanceNav');
     renderBalance();
 };
-const navIncome = $('incomeNav');
+const navDebts = $('debtsNav'); if (navDebts) navDebts.onclick = () => {
+    showView('debtsView');
+    setActiveNav('debtsNav');
+    renderDebts();
+};const navIncome = $('incomeNav');
 if (navIncome) navIncome.onclick = () => {
     showView('incomeView');
     setActiveNav('incomeNav');
     setIncomeFormCategoryOptions();
     renderIncomes();
 };
+const navCalendar = $('calendarNav');
+if (navCalendar) navCalendar.onclick = () => {
+    showView('calendarView');
+    setActiveNav('calendarNav');
+    renderCalendarForecast();
+};
 const navCharts = $('chartsNav');
 if (navCharts) navCharts.onclick = () => {
     showView('chartsView');
     setActiveNav('chartsNav');
     renderCharts();
+};
+$('calendarGrid').addEventListener('click', event => {
+    const dayButton = event.target.closest('[data-calendar-date]');
+    if (!dayButton) return;
+    calendarSelectedDate = dayButton.dataset.calendarDate;
+    calendarVisibleMonth = calendarSelectedDate.slice(0, 7);
+    renderCalendarForecast();
+});
+function changeCalendarMonth(offset) {
+    const nextMonth = calendarMonthOffset(calendarVisibleMonth, offset);
+    if (!nextMonth) return;
+    const selectedDay = Number(calendarSelectedDate.slice(8, 10)) || 1;
+    const nextDate = calendarMonthDate(nextMonth, selectedDay);
+    calendarVisibleMonth = nextMonth;
+    calendarSelectedDate = formatDateKey(nextDate);
+    renderCalendarForecast();
+}
+$('calendarPrevMonth').onclick = () => changeCalendarMonth(-1);
+$('calendarNextMonth').onclick = () => changeCalendarMonth(1);
+$('calendarToday').onclick = () => {
+    calendarSelectedDate = todayKey();
+    calendarVisibleMonth = calendarSelectedDate.slice(0, 7);
+    renderCalendarForecast();
 };
 $('addIncomeBtn').onclick = () => {
     editingIncomeId = null;
@@ -3936,6 +4172,548 @@ async function flushSyncQueue() {
     }
     updateSyncStatusUI('synced', 'Sincronizado');
 }
+
+/* ---------- Deudas ---------- */
+function debtMonthlyInterest(debt) {
+    const balance = Number(debt.balance || 0);
+    const rate = Number(debt.rate || 0) / 100;
+    return balance * (rate / 12);
+}
+function debtMonthsRemaining(debt) {
+    const balance = Number(debt.balance || 0);
+    const installment = Number(debt.installment || 0);
+    const rate = Number(debt.rate || 0) / 100 / 12;
+    if (balance <= 0) return 0;
+    if (installment <= 0) return Infinity;
+    if (rate <= 0) return Math.ceil(balance / installment);
+    const n = -Math.log(1 - (balance * rate) / installment) / Math.log(1 + rate);
+    return Number.isFinite(n) && n > 0 ? Math.ceil(n) : Infinity;
+}
+function debtTotalInterestRemaining(debt) {
+    const months = debtMonthsRemaining(debt);
+    if (!Number.isFinite(months)) return 0;
+    const installment = Number(debt.installment || 0);
+    const balance = Number(debt.balance || 0);
+    return Math.max(0, months * installment - balance);
+}
+function renderDebts() {
+    const list = $('debtsList');
+    if (!list) return;
+    const total = debts.reduce((s, d) => s + (Number(d.balance) || 0), 0);
+    const installment = debts.reduce((s, d) => s + (Number(d.installment) || 0), 0);
+    const interest = debts.reduce((s, d) => s + debtTotalInterestRemaining(d), 0);
+    const paid = debts.reduce((s, d) => s + (Number(d.paidInstallments) || 0), 0);
+    const totalInst = debts.reduce((s, d) => s + (Number(d.totalInstallments) || 0), 0);
+    const progress = totalInst > 0 ? (paid / totalInst) * 100 : 0;
+    if ($('debtsTotal')) $('debtsTotal').innerHTML = `${money(total)} <small>COP</small>`;
+    if ($('debtsCount')) $('debtsCount').textContent = `${debts.length} deuda${debts.length === 1 ? '' : 's'}`;
+    if ($('debtsInstallment')) $('debtsInstallment').textContent = money(installment);
+    if ($('debtsInterest')) $('debtsInterest').textContent = money(interest);
+    if ($('debtsProgress')) $('debtsProgress').textContent = `${progress.toFixed(0)} %`;
+    if ($('debtsMeta')) $('debtsMeta').textContent = `${debts.length} deuda${debts.length === 1 ? '' : 's'} · saldo ${money(total)}`;
+    if (!debts.length) {
+        list.innerHTML = '';
+        $('debtsEmpty')?.classList.remove('hidden');
+        return;
+    }
+    $('debtsEmpty')?.classList.add('hidden');
+    list.innerHTML = debts.map(debt => {
+        const pct = debt.totalInstallments ? Math.min(100, ((debt.paidInstallments || 0) / debt.totalInstallments) * 100) : (debt.balance <= 0 ? 100 : 0);
+        const months = debtMonthsRemaining(debt);
+        return `<div class="savings-goal">
+            <div class="savings-goal-head">
+                <strong>${escapeHtml(debt.name)}</strong>
+                <span style="color:var(--muted);font-size:11px">${escapeHtml(debt.creditor || '')}</span>
+                <button class="row-actions" data-delete-debt="${escapeHtml(debt.id)}" title="Eliminar">×</button>
+            </div>
+            <div class="savings-goal-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+            <div class="savings-goal-meta">
+                <span>Saldo ${money(debt.balance, debt.currency)}</span>
+                <span>${pct.toFixed(0)} %</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:12px;color:var(--muted)">
+                <span>Cuota ${money(debt.installment, debt.currency)}</span>
+                <span>Tasa ${Number(debt.rate||0).toFixed(2)} %</span>
+                <span>Cuotas ${debt.paidInstallments || 0}/${debt.totalInstallments || '—'}</span>
+                <span>Meses rest. ${Number.isFinite(months) ? months : '—'}</span>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <button type="button" class="btn btn-light" data-pay-debt="${escapeHtml(debt.id)}">Registrar cuota</button>
+                <button type="button" class="btn btn-light" data-edit-debt="${escapeHtml(debt.id)}">Editar</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+document.addEventListener('click', async e => {
+    const del = e.target.closest('[data-delete-debt]');
+    if (del) {
+        const id = del.dataset.deleteDebt;
+        debts = debts.filter(d => d.id !== id);
+        persistDebts();
+        renderDebts();
+        showToast('Deuda eliminada.', 'success');
+        return;
+    }
+    const edit = e.target.closest('[data-edit-debt]');
+    if (edit) {
+        const debt = debts.find(d => d.id === edit.dataset.editDebt);
+        if (!debt) return;
+        editingDebtId = debt.id;
+        const form = $('debtForm');
+        if (form) {
+            form.elements.name.value = debt.name || '';
+            form.elements.creditor.value = debt.creditor || '';
+            form.elements.balance.value = formatMoneyInput(debt.balance || 0, debt.currency || appCurrency);
+            form.elements.balance.dataset.formattedCurrency = debt.currency || appCurrency;
+            if (form.elements.currency) form.elements.currency.value = debt.currency || appCurrency;
+            form.elements.rate.value = debt.rate || '';
+            form.elements.installment.value = formatMoneyInput(debt.installment || 0, debt.currency || appCurrency);
+            form.elements.installment.dataset.formattedCurrency = debt.currency || appCurrency;
+            form.elements.dueDay.value = debt.dueDay || '';
+            form.elements.totalInstallments.value = debt.totalInstallments || '';
+            form.elements.paidInstallments.value = debt.paidInstallments || '';
+            const title = form.closest('.modal').querySelector('h2');
+            if (title) title.textContent = 'Editar deuda';
+        }
+        openModal('debtModal');
+        return;
+    }
+    const pay = e.target.closest('[data-pay-debt]');
+    if (pay) {
+        const debt = debts.find(d => d.id === pay.dataset.payDebt);
+        if (!debt) return;
+        activePayDebtId = debt.id;
+        const form = $('payDebtForm');
+        if (form) {
+            form.reset();
+            form.elements.amount.value = formatMoneyInput(debt.installment || 0, debt.currency || appCurrency);
+            form.elements.amount.dataset.formattedCurrency = debt.currency || appCurrency;
+            form.elements.date.value = new Date().toISOString().slice(0,10);
+            const title = form.closest('.modal').querySelector('h2');
+            if (title) title.textContent = `Registrar cuota · ${debt.name}`;
+        }
+        openModal('payDebtModal');
+    }
+});
+let editingDebtId = null;
+let activePayDebtId = null;
+const payDebtForm = $('payDebtForm');
+if (payDebtForm) {
+    payDebtForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const debt = debts.find(d => d.id === activePayDebtId);
+        if (!debt) { closeModals(); return; }
+        const data = Object.fromEntries(new FormData(payDebtForm));
+        const amount = parseMoneyInput(data.amount, debt.currency || appCurrency);
+        if (amount <= 0) { showToast('El importe debe ser mayor a cero.', 'error'); return; }
+        const interest = debtMonthlyInterest(debt);
+        const principal = Math.max(0, amount - interest);
+        debt.balance = Math.max(0, Number(debt.balance || 0) - principal);
+        debt.paidInstallments = Number(debt.paidInstallments || 0) + 1;
+        if (debt.balance <= 0) { debt.balance = 0; debt.status = 'pagada'; debt.paidInstallments = Number(debt.totalInstallments) || debt.paidInstallments; }
+        const payment = { id: `local-${Date.now()}`, name: `Cuota ${debt.name}`, category: 'Deudas', date: data.date || new Date().toISOString().slice(0,10), status:'pagado', amount, currency: debt.currency || appCurrency, debtId: debt.id, updatedAt: new Date().toISOString() };
+        payments.push(payment);
+        localStorage.setItem('cartera_payments', JSON.stringify(payments));
+        persistDebts();
+        populateMonths();
+        render();
+        renderDebts();
+        closeModals();
+        activePayDebtId = null;
+        showToast('Cuota registrada y pago creado.', 'success');
+    });
+}const debtForm = $('debtForm');
+if (debtForm) {
+    debtForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(debtForm));
+        const debt = {
+            id: editingDebtId || `local-${Date.now()}`,
+            name: String(data.name || '').trim(),
+            creditor: String(data.creditor || '').trim(),
+            balance: parseMoneyInput(data.balance, data.currency || appCurrency),
+            currency: data.currency || appCurrency,
+            rate: Number(data.rate) || 0,
+            installment: parseMoneyInput(data.installment, data.currency || appCurrency),
+            dueDay: Number(data.dueDay) || 1,
+            totalInstallments: Number(data.totalInstallments) || 0,
+            paidInstallments: Number(data.paidInstallments) || 0,
+            status: 'activa',
+            updatedAt: new Date().toISOString()
+        };
+        if (editingDebtId) {
+            const idx = debts.findIndex(d => d.id === editingDebtId);
+            if (idx >= 0) debts[idx] = debt;
+            editingDebtId = null;
+        } else {
+            debts.push(debt);
+        }
+        persistDebts();
+        closeModals();
+        renderDebts();
+        showToast('Deuda guardada.', 'success');
+    });
+}
+$('addDebtBtn').onclick = () => {
+    editingDebtId = null;
+    const form = $('debtForm');
+    if (form) { form.reset(); const t = form.closest('.modal').querySelector('h2'); if (t) t.textContent = 'Nueva deuda'; }
+    openModal('debtModal');
+};
+
+/* ---------- Aportes a metas ---------- */
+let activeGoalId = null;
+const contributionForm = $('contributionForm');
+if (contributionForm) {
+    contributionForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(contributionForm));
+        const goal = savingsGoals.find(g => g.id === activeGoalId);
+        if (!goal) { closeModals(); return; }
+        goal.contributions = goal.contributions || [];
+        goal.contributions.push({ id: `local-${Date.now()}`, date: data.date || new Date().toISOString().slice(0,10), amount: parseMoneyInput(data.amount), note: String(data.note||'').trim() });
+        persistSavingsGoals();
+        closeModals();
+        renderSavingsGoals();
+        showToast('Aporte registrado.', 'success');
+    });
+}
+// patch renderSavingsGoals to include Aportar button + progress vs plan
+const _origRenderSavingsGoals = renderSavingsGoals;
+renderSavingsGoals = function() {
+    const list = $('savingsGoalsList');
+    if (!list) return _origRenderSavingsGoals();
+    if (savingsGoals.length === 0) {
+        list.innerHTML = '';
+        $('savingsGoalsEmpty')?.classList.remove('hidden');
+        return;
+    }
+    $('savingsGoalsEmpty')?.classList.add('hidden');
+    list.innerHTML = savingsGoals.map(goal => {
+        const target = Number(goal.target || 0);
+        const current = goalCurrent(goal);
+        const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+        const plan = goal.monthlyPlan ? `Plan: ${money(goal.monthlyPlan)}/mes` : '';
+        return `<div class="savings-goal">
+            <div class="savings-goal-head">
+                <strong>${escapeHtml(goal.name)}</strong>
+                <button class="row-actions" data-delete-goal="${escapeHtml(goal.id)}" title="Eliminar">×</button>
+            </div>
+            <div class="savings-goal-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+            <div class="savings-goal-meta">
+                <span>${money(current)} de ${money(target)}</span>
+                <span>${pct.toFixed(0)}%</span>
+            </div>
+            ${plan ? `<p style="margin:6px 0 0;font-size:11px;color:var(--muted)">${plan}${goal.targetDate ? ' · fecha objetivo ' + goal.targetDate : ''}</p>` : ''}
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <button type="button" class="btn btn-light" data-contribute="${escapeHtml(goal.id)}">Aportar</button>
+            </div>
+            ${goal.contributions && goal.contributions.length ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Historial (${goal.contributions.length})</summary><ul style="margin:6px 0 0;padding-left:18px;font-size:12px">${goal.contributions.slice().reverse().map(c=>`<li>${c.date} · ${money(c.amount)} ${c.note? '· '+escapeHtml(c.note):''}</li>`).join('')}</ul></details>` : ''}
+        </div>`;
+    }).join('');
+};
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-contribute]');
+    if (!btn) return;
+    activeGoalId = btn.dataset.contribute;
+    const form = $('contributionForm');
+    if (form) { form.reset(); form.elements.date.value = new Date().toISOString().slice(0,10); }
+    openModal('contributionModal');
+});
+
+/* ---------- Ajustes ---------- */
+function loadSettingsUI() {
+    $('reminderDays').value = String(reminderSettings.daysBefore ?? 3);
+    $('reminderSystem').checked = reminderSettings.system !== false;
+    $('reminderOverdue').checked = reminderSettings.overdue !== false;
+    $('pinEnabled').checked = !!securitySettings.pinEnabled;
+    $('pinSetup').classList.toggle('hidden', !securitySettings.pinEnabled);
+}
+$('settingsNavBtn').onclick = () => { loadSettingsUI(); openModal('settingsModal'); };
+$('pinEnabled').onchange = () => $('pinSetup').classList.toggle('hidden', !$('pinEnabled').checked);
+$('saveSettingsBtn').onclick = async () => {
+    reminderSettings.daysBefore = Number($('reminderDays').value) || 0;
+    reminderSettings.system = $('reminderSystem').checked;
+    reminderSettings.overdue = $('reminderOverdue').checked;
+    const enablePin = $('pinEnabled').checked;
+    if (enablePin && !securitySettings.pinHash) {
+        const pin = $('pinValue').value.trim();
+        const confirm = $('pinConfirm').value.trim();
+        if (!/^\d{4,8}$/.test(pin)) { showToast('El PIN debe tener 4 a 8 dígitos.', 'error'); return; }
+        if (pin !== confirm) { showToast('Los PIN no coinciden.', 'error'); return; }
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const saltHex = [...salt].map(b=>b.toString(16).padStart(2,'0')).join('');
+        const hash = await hashPin(pin, saltHex);
+        securitySettings = { pinEnabled:true, pinHash:hash, salt:saltHex };
+    } else if (!enablePin) {
+        securitySettings = { pinEnabled:false, pinHash:'', salt:'' };
+    }
+    persistSettings();
+    closeModals();
+    showToast('Ajustes guardados.', 'success');
+    applyLockIfNeeded();
+};
+async function hashPin(pin, saltHex) {
+    const enc = new TextEncoder();
+    const salt = new Uint8Array(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
+    const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' }, keyMaterial, 256);
+    return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function applyLockIfNeeded() {
+    const overlay = $('lockOverlay');
+    if (!overlay) return;
+    if (securitySettings.pinEnabled && !sessionStorage.getItem('cartera_unlocked')) {
+        overlay.classList.remove('hidden');
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+$('lockUnlockBtn').onclick = async () => {
+    const pin = $('lockPinInput').value.trim();
+    const hash = await hashPin(pin, securitySettings.salt);
+    if (hash === securitySettings.pinHash) {
+        sessionStorage.setItem('cartera_unlocked', '1');
+        $('lockOverlay').classList.add('hidden');
+        $('lockError').textContent = '';
+    } else {
+        $('lockError').textContent = 'PIN incorrecto.';
+    }
+};
+$('lockResetBtn').onclick = () => { disconnectSession(); };
+applyLockIfNeeded();
+
+/* ---------- Búsqueda global ---------- */
+function openGlobalSearch() {
+    openModal('globalSearchModal');
+    const input = $('globalSearchInput');
+    if (input) { input.value = ''; input.focus(); }
+    renderGlobalSearch('');
+}
+$('globalSearchBtn').onclick = openGlobalSearch;
+document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openGlobalSearch();
+    }
+});
+$('globalSearchInput').addEventListener('input', e => renderGlobalSearch(e.target.value));
+function renderGlobalSearch(q) {
+    const box = $('globalSearchResults');
+    if (!box) return;
+    const term = String(q||'').trim().toLowerCase();
+    if (!term) { box.innerHTML = '<p class="notif-empty">Escribe para buscar.</p>'; return; }
+    const results = [];
+    payments.forEach(p => {
+        const hay = `${p.name||''} ${p.category||''} ${getPaymentStatus(p)} ${p.date||''} ${p.amount}`.toLowerCase();
+        if (hay.includes(term)) results.push({ type:'Pago', title:p.name, sub:`${p.category} · ${p.date} · ${money(p.amount,p.currency)}`, action:()=>goToPayment(p.id) });
+    });
+    incomes.forEach(i => {
+        const hay = `${i.name||''} ${i.category||''} ${i.date||''} ${i.amount}`.toLowerCase();
+        if (hay.includes(term)) results.push({ type:'Ingreso', title:i.name, sub:`${i.category} · ${i.date} · ${money(i.amount)}`, action:()=>goToIncome(i.id) });
+    });
+    categories.forEach(c => {
+        if ((c.name||'').toLowerCase().includes(term)) results.push({ type:'Categoría', title:c.name, sub:`Presupuesto ${money(c.budget||0)}`, action:()=>{ showView('categoriesView'); setActiveNav('categoriesNav'); } });
+    });
+    savingsGoals.forEach(g => {
+        if ((g.name||'').toLowerCase().includes(term)) results.push({ type:'Meta', title:g.name, sub:`${money(goalCurrent(g))} de ${money(g.target)}`, action:()=>{ showView('savingsView'); setActiveNav('savingsNav'); } });
+    });
+    debts.forEach(d => {
+        const hay = `${d.name||''} ${d.creditor||''}`.toLowerCase();
+        if (hay.includes(term)) results.push({ type:'Deuda', title:d.name, sub:`Saldo ${money(d.balance,d.currency)}`, action:()=>{ showView('debtsView'); setActiveNav('debtsNav'); renderDebts(); } });
+    });
+    if (!results.length) { box.innerHTML = '<p class="notif-empty">Sin resultados.</p>'; return; }
+    box.innerHTML = results.slice(0,40).map((r,idx)=>`<button type="button" class="search-result" data-idx="${idx}"><span class="search-type">${r.type}</span><strong>${escapeHtml(r.title)}</strong><small>${escapeHtml(r.sub)}</small></button>`).join('');
+    box.querySelectorAll('.search-result').forEach((btn,idx) => btn.onclick = () => { results[idx].action(); closeModals(); });
+}
+function goToIncome(id) {
+    showView('incomeView');
+    setActiveNav('incomeNav');
+    setIncomeFormCategoryOptions();
+    renderIncomes();
+    requestAnimationFrame(() => {
+        const row = [...document.querySelectorAll('tr[data-income-row]')].find(r=>r.dataset.incomeRow===id);
+        if (row) { row.classList.add('row-flash'); row.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>row.classList.remove('row-flash'),2200); }
+    });
+}
+// add data-income-row to income rows: patch renderIncomes
+const _origRenderIncomes = renderIncomes;
+renderIncomes = function() {
+    _origRenderIncomes();
+    const list = $('incomes');
+    if (!list) return;
+    list.querySelectorAll('tr').forEach((tr, idx) => {});
+    // re-render with data attribute by patching innerHTML already done; add attributes via replace
+    // Instead, monkey: re-open and tag rows by income id order
+    const incomesSorted = incomes.slice().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    const rows = list.querySelectorAll('tr');
+    rows.forEach((tr, i) => { const inc = incomesSorted[i]; if (inc) tr.dataset.incomeRow = inc.id; });
+};
+
+/* ---------- Backup completo ---------- */
+function exportBackup() {
+    const payload = {
+        schema: 'cartera-backup',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        app: { currency: appCurrency, theme: document.body.classList.contains('dark') ? 'dark' : 'light' },
+        data: {
+            payments, incomes, categories, savingsGoals, debts,
+            financeNotes: (typeof financialNotes !== 'undefined' ? financialNotes : []),
+            settings: { reminders: reminderSettings, security: { pinEnabled: securitySettings.pinEnabled } }
+        }
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `cartera-backup-${new Date().toISOString().slice(0,10)}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('Copia de seguridad descargada.', 'success');
+}
+async function restoreBackup(file) {
+    const text = await file.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { showToast('Archivo inválido.', 'error'); return; }
+    if (!parsed || parsed.schema !== 'cartera-backup' || !parsed.data) { showToast('No es una copia de seguridad válida.', 'error'); return; }
+    const d = parsed.data;
+    if (!confirm(`Restaurar copia del ${parsed.exportedAt ? parsed.exportedAt.slice(0,10) : ''}? Se reemplazarán los datos actuales.`)) return;
+    // snapshot previo
+    try { localStorage.setItem('cartera_backup_previous', JSON.stringify({ payments, incomes, categories, savingsGoals, debts, ts: new Date().toISOString() })); } catch (e) {}
+    // pausar listeners
+    firestoreUnsubscribers.forEach(u=>{try{u();}catch(e){}}); firestoreUnsubscribers=[];
+    payments = Array.isArray(d.payments) ? d.payments : payments;
+    incomes = Array.isArray(d.incomes) ? d.incomes : incomes;
+    categories = Array.isArray(d.categories) && d.categories.length ? d.categories : categories;
+    savingsGoals = Array.isArray(d.savingsGoals) ? d.savingsGoals.map(g=>({id:g.id||`local-${Date.now()}`,name:g.name||'Meta',target:Number(g.target||0),opening:g.opening!==undefined?Number(g.opening||0):Number(g.current||0),contributions:Array.isArray(g.contributions)?g.contributions:[],monthlyPlan:Number(g.monthlyPlan||0),targetDate:g.targetDate||'',createdAt:g.createdAt||new Date().toISOString()})) : savingsGoals;
+    debts = Array.isArray(d.debts) ? d.debts : debts;
+    if (d.settings && d.settings.reminders) reminderSettings = Object.assign(reminderSettings, d.settings.reminders);
+    persistSettings();
+    localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    localStorage.setItem('cartera_incomes', JSON.stringify(incomes));
+    localStorage.setItem('cartera_categories', JSON.stringify(categories));
+    localStorage.setItem('cartera_savings_goals', JSON.stringify(savingsGoals));
+    localStorage.setItem('cartera_debts', JSON.stringify(debts));
+    // sync Firestore
+    const collectionPayments = userCollection('payments');
+    if (collectionPayments) {
+        const existing = await collectionPayments.get().catch(()=>({docs:[]}));
+        const batch = db.batch();
+        (existing.docs||[]).forEach(doc => batch.delete(doc.ref));
+        payments.forEach(p => {
+            let docId = p.id;
+            if (String(docId).startsWith('local-')) { docId = collectionPayments.doc().id; p.id = docId; }
+            if (!docId) docId = collectionPayments.doc().id;
+            batch.set(collectionPayments.doc(docId), p);
+        });        await batch.commit().catch(()=>{});
+        localStorage.setItem('cartera_payments', JSON.stringify(payments));
+    }
+    populateMonths();
+    render();
+    renderIncomes();
+    renderSavingsGoals();
+    renderDebts();
+    showToast('Copia restaurada.', 'success');
+}
+// wire backup buttons (override exportData for "Copia completa")
+const _origExportData = exportData;
+// keep exportData for payments CSV; add backup buttons
+setTimeout(() => {
+    ['reportBackupBtn','chartsBackupBtn'].forEach(id => { const b=$(id); if(b) b.onclick = exportBackup; });
+    // add restore button to import modal if not present
+    const actions = document.querySelector('#importModal .modal-actions');
+    if (actions && !document.getElementById('restoreBackupBtn')) {
+        const btn = document.createElement('button');
+        btn.type='button'; btn.className='btn btn-light'; btn.id='restoreBackupBtn'; btn.textContent='Restaurar copia';
+        btn.onclick = () => { const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=()=>{ if(inp.files[0]) restoreBackup(inp.files[0]); }; inp.click(); };
+        actions.appendChild(btn);
+    }
+}, 0);
+
+/* ---------- Recordatorios configurables en notificaciones ---------- */
+function budgetAlertEntries() {
+    const month = currentMonth();
+    const byCat = {};
+    payments.filter(p=>String(p.date||'').startsWith(month)).forEach(p=>{
+        const amt = convertCurrency(p.amount, p.currency, appCurrency);
+        byCat[p.category] = (byCat[p.category]||0) + amt;
+    });
+    const entries = [];
+    categories.forEach(cat => {
+        const budget = getCategoryBudget(cat, month);
+        if (!budget) return;
+        const state = categoryBudgetState(byCat[cat.name]||0, budget);
+        if (!state || state.key === 'ok') return;
+        entries.push({ kind:'presupuesto', category:cat.name, month, state, spent:byCat[cat.name]||0, budget });
+    });
+    return entries;
+}
+const _origRenderNotifications = renderNotifications;
+renderNotifications = function() {
+    _origRenderNotifications();
+    const badge = $('notifBadge');
+    if (!badge) return;
+    const extras = budgetAlertEntries();
+    if (extras.length) {
+        const cur = Number(badge.textContent) || 0;
+        badge.textContent = (cur + extras.length) > 99 ? '99+' : String(cur + extras.length);
+        badge.classList.remove('hidden');
+        // append budget alert cards to notif list
+        const list = $('notifList');
+        if (list) {
+            const html = extras.map(e => `<article class="notif-item is-${e.state.key === 'exceeded' ? 'vencido' : 'pendiente'}"><div class="notif-item-top"><span class="notif-state state-${e.state.key === 'exceeded' ? 'vencido' : 'pendiente'}">${e.state.key === 'exceeded' ? 'Excedido' : 'Cerca del límite'}</span></div><div><h4>${escapeHtml(e.category)}</h4></div><div class="notif-meta"><span class="notif-amount">${money(e.spent)} de ${money(e.budget)}</span><span class="notif-due">${e.state.percent}% del presupuesto</span></div></article>`).join('');
+            list.insertAdjacentHTML('beforeend', html);
+        }
+    }
+};
+/* ---------- A11y: modal roles ---------- */
+document.querySelectorAll('.modal-backdrop').forEach(m => {
+    m.setAttribute('role','dialog');
+    m.setAttribute('aria-modal','true');
+});
+document.querySelectorAll('nav button').forEach(b => {
+    b.addEventListener('click', () => {
+        document.querySelectorAll('nav button').forEach(x=>x.removeAttribute('aria-current'));
+        b.setAttribute('aria-current','page');
+    });
+});
+document.querySelectorAll('th').forEach(th => { if(!th.hasAttribute('scope')) th.setAttribute('scope','col'); });
+
+/* ---------- Proyección de fin de mes en Resumen ---------- */
+function computeMonthProjection() {
+    const month = currentMonth();
+    const events = calendarEventsForRange(month, month, true);
+    const today = todayKey();
+    const incomeReceived = events.filter(e=>e.kind==='income' && e.date <= today).reduce((s,e)=>s+calendarEventAmount(e),0);
+    const incomeExpected = events.filter(e=>e.kind==='income' && e.date > today).reduce((s,e)=>s+calendarEventAmount(e),0);
+    const paidOut = events.filter(e=>e.kind==='payment' && getPaymentStatus(e.item)==='pagado').reduce((s,e)=>s+calendarEventAmount(e),0);
+    const pendingOut = events.filter(e=>e.kind==='payment' && getPaymentStatus(e.item)!=='pagado').reduce((s,e)=>s+calendarEventAmount(e),0);
+    return { incomeReceived, incomeExpected, paidOut, pendingOut, net: (incomeReceived+incomeExpected) - (paidOut+pendingOut) };
+}
+// inject projection card into summary after render
+const _origRender = render;
+render = function() {
+    _origRender();
+    const proj = computeMonthProjection();
+    let card = document.getElementById('monthProjectionCard');
+    if (!card) {
+        const section = document.querySelector('#summaryView .overview');
+        if (section) {
+            card = document.createElement('article');
+            card.id = 'monthProjectionCard';
+            card.className = 'stat';
+            card.style.gridColumn = '1 / -1';
+            section.appendChild(card);
+        }
+    }
+    if (card) {
+        card.innerHTML = `<div class="stat-head"><svg class="stat-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-trend-up"/></svg><div class="stat-label">Proyección de fin de mes (flujo neto estimado)</div></div>
+        <div class="amount">${money(proj.net)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">Ingresos ${money(proj.incomeReceived+proj.incomeExpected)} · Pagado ${money(proj.paidOut)} · Pendiente ${money(proj.pendingOut)}</div>`;
+    }
+};
+render();
+applyLockIfNeeded();
 
 window.addEventListener('error', event => { console.error('Error global:', event.error || event.message); });
 window.addEventListener('unhandledrejection', event => { console.error('Promise rechazada:', event.reason); });

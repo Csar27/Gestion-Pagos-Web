@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cartera-v3';
+const CACHE_NAME = 'cartera-v4';
 const SHELL = ['/', '/index.html'];
 
 self.addEventListener('install', event => {
